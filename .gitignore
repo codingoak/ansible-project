@@ -17,7 +17,11 @@ id_ed25519*
 # Backup
 *.bak
 
+# Inventory with real IPs
+inventory/hosts.ini
+
 # Editor
 .vscode/
 *.swp
 *~
+
