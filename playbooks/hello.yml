@@ -11,6 +11,21 @@
     - name: Show uptime
       ansible.builtin.debug:
         msg: "Server has been running since: {{ uptime_output.stdout }}"
+    
+    - name: Download EPEL GPG key
+      ansible.builtin.get_url:
+        url: https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-10
+        dest: /tmp/RPM-GPG-KEY-EPEL-10
+
+    - name: Import EPEL GPG key via rpm
+      ansible.builtin.command:
+        cmd: rpm --import /tmp/RPM-GPG-KEY-EPEL-10
+      changed_when: false
+    
+    - name: Install EPEL repository
+      ansible.builtin.dnf:
+        name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+        state: present  
 
     - name: Install htop
       ansible.builtin.dnf:
