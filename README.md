@@ -25,6 +25,7 @@ ansible-project/
 - RHEL 10.1 control node with Ansible installed
 - RHEL 10.1 managed node reachable via SSH
 - SSH key-based authentication configured for the `ansible` user
+- EPEL repository (installed automatically by hello.yml including GPG key import)
 
 
 ## Setup
@@ -52,6 +53,10 @@ ansible managed -m ping
 # Run first playbook
 ansible-playbook playbooks/hello.yml
 ```
+
+## Known Issues
+
+- RHEL 10 ships with GPG v6 which is incompatible with Ansible's `rpm_key` module. EPEL GPG key is therefore imported via `rpm --import` directly.
 
 
 ## Available Tags (in progress)
