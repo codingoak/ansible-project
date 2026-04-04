@@ -1,0 +1,23 @@
+# Ansible temporary files
+*.retry
+*.log
+
+# Sensitive data
+group_vars/all/vault.yml
+host_vars/*/vault.yml
+*.vault
+secrets/
+
+# SSH-Keys
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Backup
+*.bak
+
+# Editor
+.vscode/
+*.swp
+*~

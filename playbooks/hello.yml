@@ -1,0 +1,19 @@
+---
+- name: My first playbook
+  hosts: managed
+  become: true
+
+  tasks:
+    - name: Get system uptime
+      ansible.builtin.command: uptime
+      register: uptime_output
+
+    - name: Show uptime
+      ansible.builtin.debug:
+        msg: "Server has been running since: {{ uptime_output.stdout }}"
+
+    - name: Install htop
+      ansible.builtin.dnf:
+        name: htop
+        state: present
+
