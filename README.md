@@ -1,7 +1,7 @@
 # Ansible Learning Project - RHEL 10.1 Hardening (in progress)
 
-A structured learning environment for Ansibel using a RHEL 10.1 controle node.
-The goal is to write and test playbooks agains a managed node.
+A structured learning environment for **Ansible** using a RHEL 10.1 control node.
+The goal is to design, test and evolve **CIS-oriented hardening playbooks** against managed RHEL 10.1 nodes.
 
 
 ## Project Strucutre
@@ -22,9 +22,9 @@ ansible-project/
 
 ## Requirements
 
-- RHEL 10.1 control node with Ansible installed
-- RHEL 10.1 managed node reachable via SSH
-- SSH key-based authentication configured for the `ansible` user
+- RHEL 10.1 control node with ansible-core installed
+- One or more RHEL 10.1 managed node reachable via SSH
+- SSH key-based authentication configured for the ansible user
 - EPEL repository (installed automatically by hello.yml including GPG key import)
 
 
@@ -44,7 +44,7 @@ vim inventory/hosts.ini
 ```
 
 
-## Usage (in progress)
+## Usage
 
 ```sh
 # Test connectivity
@@ -53,6 +53,61 @@ ansible managed -m ping
 # Run first playbook
 ansible-playbook playbooks/hello.yml
 ```
+
+
+## Hardening Playbook (hardening.yml)
+
+The hardening.yml playbook implements a CIS‑oriented baseline hardening
+for RHEL 10.1 systems. It is intentionally developed step by step, with each
+hardening area grouped into logical blocks that can be executed and tested
+independently.
+
+### Structure and philosophy
+
+The playbook is divided into numbered blocks, each addressing a specific
+hardening topic (system updates, SSH, SELinux, audit logging, etc.).
+
+Each block is:
+
+- clearly scoped
+- tagged for selective execution
+- committed separately for clean Git history and easier review
+
+This mirrors how Ansible hardening playbooks are typically developed and
+maintained in professional environments.
+
+Example:
+
+```sh
+ansible-playbook playbooks/hardening.yml --tags update
+```
+
+### Block 1 – System updates
+
+Block 1 establishes a secure and up‑to‑date system baseline:
+
+- Updates all installed packages
+- Installs dnf-automatic
+- Enables **dnf-automatic-install.timer** on RHEL 10
+
+RHEL 10 provides multiple dnf-automatic timers.
+This project explicitly enables **dnf-automatic-install.timer**, which
+downloads and installs updates automatically, independent of the settings in /etc/dnf/automatic.conf.
+
+
+## Current status
+
+The hardening playbook is **work in progress** and intentionally incomplete.
+
+Planned future blocks include:
+
+- Removal of insecure legacy packages
+- SELinux enforcement
+- SSH hardening
+- Firewall configuration
+- Audit logging
+- Kernel and service hardening
+
 
 ## Known Issues
 
@@ -63,7 +118,15 @@ ansible-playbook playbooks/hello.yml
 
 | Tag | Playbook | Description |
 |---|---|---|
-| - | `hello.yml` | Get uptime, install htop |
+| - | hello.yml | Get uptime, install htop |
+| update | hardening.yml | System updates & automatic patching |
+| ssh | hardening.yml | SSH hardening (planned) |
+| audit | hardening.yml | Audit logging (planned) |
 
 
 ## Compliance (in progress)
+This project aims to align with:
+- CIS RHEL 10 Benchmark (where applicable)
+- Real-world operational constraints (e.g. Kubernetes nodes, minimal installs)
+
+Compliance mapping will be added incrementally.
