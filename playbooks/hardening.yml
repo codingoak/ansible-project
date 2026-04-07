@@ -46,9 +46,24 @@
   # BLOCK 1: System updates
   ###############################################################
   tasks:
-    - name: "[1/7] Placeholder - system update tasks"
-      ansible.builtin.debug:
-        msg: "System update block – not implemented yet"
+    - name: "[1/7] Update all installed packages"
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_cache: true
+      tags: update
+
+    - name: "[1/7] Ensure dnf-automatic is installed"
+      ansible.builtin.dnf:
+        name: dnf-automatic
+        state: present
+      tags: update
+
+    - name: "[1/7] Enable automatic installation of updates"
+      ansible.builtin.systemd:
+        name: dnf-automatic-install.timer
+        enabled: true
+        state: started
       tags: update
 
   ###############################################################
