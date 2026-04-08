@@ -95,6 +95,21 @@ This project explicitly enables **dnf-automatic-install.timer**, which
 downloads and installs updates automatically, independent of the settings in /etc/dnf/automatic.conf.
 
 
+### Block 2 – Remove insecure packages
+
+Block 2 removes legacy and insecure packages that are not needed on a modern RHEL 10 server:
+
+| Package | Reason |
+|---|---|
+| `telnet` | Transmits data including passwords in plaintext |
+| `rsh` | Remote shell without encryption, replaced by SSH |
+| `rsh-server` | Server component of rsh |
+| `ypbind` | NIS client, outdated and insecure directory service |
+| `ypserv` | NIS server, outdated and insecure directory service |
+| `tftp` | Trivial FTP without authentication or encryption |
+| `tftp-server` | Server component of tftp |
+
+
 ## Current status
 
 The hardening playbook is **work in progress** and intentionally incomplete.
@@ -118,11 +133,13 @@ Planned future blocks include:
 
 | Tag | Playbook | Description |
 |---|---|---|
-| - | hello.yml | Get uptime, install htop |
-| update | hardening.yml | System updates & automatic patching |
-| ssh | hardening.yml | SSH hardening (planned) |
-| audit | hardening.yml | Audit logging (planned) |
-
+| - | `hello.yml` | Get uptime, install htop |
+| `update` | `hardening.yml` | System updates & automatic patching |
+| `packages` | `hardening.yml` | Remove insecure packages (telnet, rsh, ypbind, ypserv, tftp...) |
+| `selinux` | `hardening.yml` | Enforce SELinux (planned) |
+| `ssh` | `hardening.yml` | Harden SSH configuration (planned) |
+| `firewall` | `hardening.yml` | Configure firewalld (planned) |
+| `audit` | `hardening.yml` | Audit logging (planned) |
 
 ## Compliance (in progress)
 This project aims to align with:
