@@ -69,9 +69,10 @@
   ###############################################################
   # BLOCK 2: Remove insecure packages
   ###############################################################
-    - name: "[2/7] Placeholder - package removal"
-      ansible.builtin.debug:
-        msg: "Package hardening block – not implemented yet"
+    - name: "[2/7] Remove insecure packages"
+      ansible.builtin.dnf:
+        name: "{{ packages_to_remove }}"
+        state: absent
       tags: packages
 
   ###############################################################
