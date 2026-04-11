@@ -171,13 +171,31 @@ Block 5 configures firewalld on the managed node:
 > This makes the server invisible to port scanners.
 
 
+### Block 6 – Configure audit logging
+
+Block 6 sets up auditd to monitor critical system activity:
+- Installs and enables the `auditd` service
+- Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
+
+| Key `-k` | Monitored paths | Events |
+|---|---|---|
+| `identity` | `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` | Write, attribute change |
+| `sudo` | `/etc/sudoers`, `/etc/sudoers.d/` | Write, attribute change |
+| `logins` | `/var/log/lastlog`, `/var/run/faillock/` | Write, attribute change |
+| `sshd` | `/etc/ssh/sshd_config` | Write, attribute change |
+| `exec_root` | All commands executed as root via sudo | Always |
+| `network` | `/etc/hosts`, `/etc/sysconfig/network` | Write, attribute change |
+
+> **Note:** A handler reloads the audit rules via `augenrules --load`
+> automatically after any change to the rules file.
+
+
 ## Current status
 
 The hardening playbook is **work in progress** and intentionally incomplete.
 
 Planned future blocks include:
 
-- Audit logging
 - Kernel and service hardening
 
 
@@ -196,7 +214,8 @@ Planned future blocks include:
 | `selinux` | `hardening.yml` | Enforce SELinux |
 | `ssh` | `hardening.yml` | Harden SSH configuration |
 | `firewall` | `hardening.yml` | Configure firewalld |
-| `audit` | `hardening.yml` | Audit logging (planned) |
+| `audit` | `hardening.yml` | Audit logging |
+
 
 ## Compliance (in progress)
 This project aims to align with:
