@@ -185,11 +185,48 @@
       tags: firewall
 
   ###############################################################
-  # BLOCK 6: Audit logging
+  # BLOCK 6: Configure audit logging
   ###############################################################
-    - name: "[6/7] Placeholder - audit logging"
-      ansible.builtin.debug:
-        msg: "Audit logging block – not implemented yet"
+    - name: "[6/7] Install auditd"
+      ansible.builtin.dnf:
+        name: audit
+        state: present
+      tags: audit
+
+    - name: "[6/7] Enable and start auditd"
+      ansible.builtin.systemd:
+        name: auditd
+        enabled: true
+        state: started
+      tags: audit
+
+    - name: "[6/7] Write audit rules"
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/hardening.rules
+        backup: yes
+        content: |
+          # Monitor identity files
+          -w /etc/passwd -p wa -k identity
+          -w /etc/shadow -p wa -k identity
+          -w /etc/group -p wa -k identity
+          -w /etc/gshadow -p wa -k identity
+          -w /etc/sudoers -p wa -k sudo
+          -w /etc/sudoers.d/ -p wa -k sudo
+
+          # Login activity
+          -w /var/log/lastlog -p wa -k logins
+          -w /var/run/faillock/ -p wa -k logins
+
+          # SSH configuration
+          -w /etc/ssh/sshd_config -p wa -k sshd
+
+          # All root executions via sudo
+          -a always,exit -F arch=b64 -S execve -F euid=0 -k exec_root
+
+          # Network configuration
+          -w /etc/hosts -p wa -k network
+          -w /etc/sysconfig/network -p wa -k network
+      notify: reload audit rules
       tags: audit
 
   ###############################################################
@@ -212,6 +249,5 @@
         name: sshd
         state: restarted
 
-    - name: reload auditd rules
-      ansible.builtin.debug:
-        msg: "auditd rules reload handler placeholder"
+    - name: reload audit rules
+      ansible.builtin.command: augenrules --load
