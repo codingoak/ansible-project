@@ -153,11 +153,35 @@
       tags: ssh
 
   ###############################################################
-  # BLOCK 5: Firewall configuration
+  # BLOCK 5: Configure firewall
   ###############################################################
-    - name: "[5/7] Placeholder - firewall configuration"
-      ansible.builtin.debug:
-        msg: "Firewall hardening block – not implemented yet"
+    - name: "[5/7] Install firewalld"
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
+      tags: firewall
+
+    - name: "[5/7] Enable and start firewalld"
+      ansible.builtin.systemd:
+        name: firewalld
+        enabled: true
+        state: started
+      tags: firewall
+
+    - name: "[5/7] Set default zone to drop"
+      ansible.posix.firewalld:
+        zone: drop
+        state: enabled
+        permanent: true
+      tags: firewall
+
+    - name: "[5/7] Allow SSH in drop zone"
+      ansible.posix.firewalld:
+        zone: drop
+        service: ssh
+        state: enabled
+        permanent: true
+        immediate: true
       tags: firewall
 
   ###############################################################
