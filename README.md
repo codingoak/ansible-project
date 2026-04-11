@@ -255,14 +255,14 @@ After running the full hardening playbook, verify the results with OpenSCAP:
 
 ```sh
 # Install OpenSCAP on the managed node
-ansible managed -m ansible.builtin.dnf -a "name=openscap-scanner,scap-security-guide state=present"
+ansible managed -m ansible.builtin.dnf -a "name=openscap-scanner,scap-security-guide state=present" --become
 
 # Run CIS benchmark scan
 ansible managed -m ansible.builtin.command -a \
   "oscap xccdf eval \
    --profile xccdf_org.ssgproject.content_profile_cis \
    --report /tmp/scap-report.html \
-   /usr/share/xml/scap/ssg/content/ssg-rhel10-ds.xml"
+   /usr/share/xml/scap/ssg/content/ssg-rhel10-ds.xml" -- become
 
 # Fetch report to control node
 ansible managed -m ansible.builtin.fetch -a \
