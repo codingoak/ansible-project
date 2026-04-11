@@ -125,15 +125,36 @@ that violates the defined security policy – even for the root user.
 > This block ensures it has not been accidentally or intentionally disabled.
 
 
+### Block 4 – Harden SSH
+Block 4 hardens the SSH configuration on the managed node:
+
+| Setting | Value | Reason |
+|---|---|---|
+| `PermitRootLogin` | `no` | Prevents direct root access via SSH |
+| `PasswordAuthentication` | `no` | Forces SSH key-based authentication |
+| `ClientAliveInterval` | `300` | Disconnects idle sessions after 5 minutes |
+| `MaxAuthTries` | `3` | Limits brute-force attempts |
+| `X11Forwarding` | `no` | Disables unnecessary graphical forwarding |
+| `PermitEmptyPasswords` | `no` | Prevents login with empty passwords |
+
+Additionally enforces secure cryptographic algorithms:
+
+| Type | Allowed algorithms |
+|---|---|
+| Key exchange | `curve25519-sha256`, `diffie-hellman-group14-sha256` |
+| Ciphers | `aes256-gcm@openssh.com`, `chacha20-poly1305@openssh.com` |
+| MACs | `hmac-sha2-256`, `hmac-sha2-512` |
+
+> **Note:** A handler restarts `sshd` automatically after any change to the SSH
+> configuration, but only once at the end of the play – not after every single task.
+
+
 ## Current status
 
 The hardening playbook is **work in progress** and intentionally incomplete.
 
 Planned future blocks include:
 
-- Removal of insecure legacy packages
-- SELinux enforcement
-- SSH hardening
 - Firewall configuration
 - Audit logging
 - Kernel and service hardening
@@ -152,7 +173,7 @@ Planned future blocks include:
 | `update` | `hardening.yml` | System updates & automatic patching |
 | `packages` | `hardening.yml` | Remove insecure packages (telnet, rsh, ypbind, ypserv, tftp...) |
 | `selinux` | `hardening.yml` | Enforce SELinux |
-| `ssh` | `hardening.yml` | Harden SSH configuration (planned) |
+| `ssh` | `hardening.yml` | Harden SSH configuration |
 | `firewall` | `hardening.yml` | Configure firewalld (planned) |
 | `audit` | `hardening.yml` | Audit logging (planned) |
 
