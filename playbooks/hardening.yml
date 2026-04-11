@@ -98,11 +98,58 @@
       tags: selinux
 
   ###############################################################
-  # BLOCK 4: SSH hardening
+  # BLOCK 4: Harden SSH
   ###############################################################
-    - name: "[4/7] Placeholder - SSH hardening"
-      ansible.builtin.debug:
-        msg: "SSH hardening block – not implemented yet"
+    - name: "[4/7] SSH - Disable root login"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        backup: yes
+      notify: restart sshd
+      tags: ssh
+
+    - name: "[4/7] SSH - Disable password authentication"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+      notify: restart sshd
+      tags: ssh
+
+    - name: "[4/7] SSH - Set idle timeout"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ClientAliveInterval'
+        line: "ClientAliveInterval {{ ssh_idle_timeout }}"
+      notify: restart sshd
+      tags: ssh
+
+    - name: "[4/7] SSH - Set max authentication attempts"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?MaxAuthTries'
+        line: "MaxAuthTries {{ ssh_max_auth_tries }}"
+      notify: restart sshd
+      tags: ssh
+
+    - name: "[4/7] SSH - Disallow empty passwords"
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitEmptyPasswords'
+        line: 'PermitEmptyPasswords no'
+      notify: restart sshd
+      tags: ssh
+
+    - name: "[4/7] SSH - Allow secure algorithms only"
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        marker: "# {mark} ANSIBLE MANAGED - Crypto settings"
+        block: |
+          KexAlgorithms curve25519-sha256,diffie-hellman-group14-sha256
+          Ciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com
+          MACs hmac-sha2-256,hmac-sha2-512
+      notify: restart sshd
       tags: ssh
 
   ###############################################################
@@ -137,8 +184,9 @@
   ###############################################################
   handlers:
     - name: restart sshd
-      ansible.builtin.debug:
-        msg: "sshd restart handler placeholder"
+      ansible.builtin.systemd:
+        name: sshd
+        state: restarted
 
     - name: reload auditd rules
       ansible.builtin.debug:
