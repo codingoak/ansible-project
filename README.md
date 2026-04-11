@@ -110,6 +110,21 @@ Block 2 removes legacy and insecure packages that are not needed on a modern RHE
 | `tftp-server` | Server component of tftp |
 
 
+### Block 3 – Ensure SELinux is enforcing
+
+Block 3 ensures SELinux is running in enforcing mode on the managed node:
+- Checks the current SELinux status at runtime via `getenforce`
+- Sets SELinux to `enforcing` persistently in `/etc/selinux/config`
+- Sets SELinux to `enforcing` at runtime via `setenforce 1` if not already active
+
+SELinux (Security-Enhanced Linux) is a Mandatory Access Control (MAC) system
+built into the Linux kernel. In enforcing mode, it actively blocks any action
+that violates the defined security policy – even for the root user.
+
+> **Note:** RHEL 10.1 ships with SELinux in enforcing mode by default.
+> This block ensures it has not been accidentally or intentionally disabled.
+
+
 ## Current status
 
 The hardening playbook is **work in progress** and intentionally incomplete.
@@ -136,7 +151,7 @@ Planned future blocks include:
 | - | `hello.yml` | Get uptime, install htop |
 | `update` | `hardening.yml` | System updates & automatic patching |
 | `packages` | `hardening.yml` | Remove insecure packages (telnet, rsh, ypbind, ypserv, tftp...) |
-| `selinux` | `hardening.yml` | Enforce SELinux (planned) |
+| `selinux` | `hardening.yml` | Enforce SELinux |
 | `ssh` | `hardening.yml` | Harden SSH configuration (planned) |
 | `firewall` | `hardening.yml` | Configure firewalld (planned) |
 | `audit` | `hardening.yml` | Audit logging (planned) |
