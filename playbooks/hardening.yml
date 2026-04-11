@@ -230,15 +230,73 @@
       tags: audit
 
   ###############################################################
-  # BLOCK 7: Password policy & kernel hardening
+  # BLOCK 7: Password policy & misc hardening
   ###############################################################
-    - name: "[7/7] Placeholder - password & kernel hardening"
-      ansible.builtin.debug:
-        msg: "Password and kernel hardening block – not implemented yet"
-      tags:
-        - password
-        - sysctl
-        - services
+    - name: "[7/7] Install libpwquality"
+      ansible.builtin.dnf:
+        name: libpwquality
+        state: present
+      tags: password
+
+    - name: "[7/7] Set password quality policy"
+      ansible.builtin.copy:
+        dest: /etc/security/pwquality.conf
+        backup: yes
+        content: |
+          # Minimum length
+          minlen = {{ password_min_length }}
+          # At least 1 digit
+          dcredit = -1
+          # At least 1 uppercase letter
+          ucredit = -1
+          # At least 1 lowercase letter
+          lcredit = -1
+          # At least 1 special character
+          ocredit = -1
+          # Max 3 consecutive identical characters
+          maxrepeat = 3
+      tags: password
+
+    - name: "[7/7] Set password expiry"
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^PASS_MAX_DAYS'
+        line: "PASS_MAX_DAYS   {{ password_max_days }}"
+      tags: password
+
+    - name: "[7/7] Kernel hardening via sysctl"
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        # Disable IP forwarding (not a router)
+        - { name: 'net.ipv4.ip_forward', value: '0' }
+        # SYN flood protection
+        - { name: 'net.ipv4.tcp_syncookies', value: '1' }
+        # Ignore ICMP redirects
+        - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
+        - { name: 'net.ipv6.conf.all.accept_redirects', value: '0' }
+        # Disable source routing
+        - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
+        # Enable reverse path filter
+        - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
+        # Enable ASLR
+        - { name: 'kernel.randomize_va_space', value: '2' }
+        # Restrict core dumps
+        - { name: 'fs.suid_dumpable', value: '0' }
+      tags: sysctl
+
+    - name: "[7/7] Disable unnecessary services"
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ services_to_disable }}"
+      failed_when: false
+      tags: services
 
   ###############################################################
   # HANDLERS (defined early, implemented later)
