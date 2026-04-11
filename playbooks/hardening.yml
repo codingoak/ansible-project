@@ -76,11 +76,25 @@
       tags: packages
 
   ###############################################################
-  # BLOCK 3: SELinux configuration
+  # BLOCK 3: Ensure SELinux is enforcing
   ###############################################################
-    - name: "[3/7] Placeholder - SELinux configuration"
-      ansible.builtin.debug:
-        msg: "SELinux hardening block – not implemented yet"
+    - name: "[3/7] Check SELinux status"
+      ansible.builtin.command: getenforce
+      register: selinux_status
+      changed_when: false
+      tags: selinux
+
+    - name: "[3/7] Set SELinux to enforcing (persistent)"
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=enforcing'
+        backup: yes
+      tags: selinux
+
+    - name: "[3/7] Set SELinux to enforcing (runtime)"
+      ansible.builtin.command: setenforce 1
+      when: selinux_status.stdout != "Enforcing"
       tags: selinux
 
   ###############################################################
