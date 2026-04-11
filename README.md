@@ -154,13 +154,29 @@ Additionally enforces secure cryptographic algorithms:
 > configuration, but only once at the end of the play – not after every single task.
 
 
+### Block 5 – Configure firewall
+
+Block 5 configures firewalld on the managed node:
+- Installs firewalld if not present
+- Enables and starts the firewalld service
+- Sets the default zone to `drop` – all incoming traffic is blocked by default
+- Explicitly allows SSH so the managed node remains reachable
+
+| Zone | Default policy | Allowed services |
+|---|---|---|
+| `drop` | Block all incoming traffic | `ssh` |
+
+> **Note:** The `drop` zone silently discards all packets that do not match
+> an explicit rule – no ICMP reject message is sent back to the sender.
+> This makes the server invisible to port scanners.
+
+
 ## Current status
 
 The hardening playbook is **work in progress** and intentionally incomplete.
 
 Planned future blocks include:
 
-- Firewall configuration
 - Audit logging
 - Kernel and service hardening
 
@@ -179,7 +195,7 @@ Planned future blocks include:
 | `packages` | `hardening.yml` | Remove insecure packages (telnet, rsh, ypbind, ypserv, tftp...) |
 | `selinux` | `hardening.yml` | Enforce SELinux |
 | `ssh` | `hardening.yml` | Harden SSH configuration |
-| `firewall` | `hardening.yml` | Configure firewalld (planned) |
+| `firewall` | `hardening.yml` | Configure firewalld |
 | `audit` | `hardening.yml` | Audit logging (planned) |
 
 ## Compliance (in progress)
