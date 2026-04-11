@@ -26,7 +26,12 @@ ansible-project/
 - One or more RHEL 10.1 managed node reachable via SSH
 - SSH key-based authentication configured for the ansible user
 - EPEL repository (installed automatically by hello.yml including GPG key import)
+- Ansible collections: `ansible.posix`
 
+```sh
+# Install required collections
+ansible-galaxy collection install ansible.posix
+```
 
 ## Setup
 
