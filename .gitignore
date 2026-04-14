@@ -1,6 +1,18 @@
+# Inventory with real IPs
+inventory/hosts.ini
+
+# Vault password
+.vault_pass
+
 # Ansible temporary files
 *.retry
 *.log
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+id_ed25519*
 
 # Sensitive data
 group_vars/all/vault.yml
@@ -8,19 +20,26 @@ host_vars/*/vault.yml
 *.vault
 secrets/
 
-# SSH-Keys
-*.pem
-*.key
-id_rsa*
-id_ed25519*
-
-# Backup
+# Backup files
 *.bak
 
-# Inventory with real IPs
-inventory/hosts.ini
+# OpenSCAP reports (may contain IPs, MACs, hostnames)
+scap-reports/
 
-# Editor
+# Minecraft Bedrock world data (large binary files)
+bds-data/
+
+# Ansible facts cache
+.ansible/
+fact_cache/
+
+# Archives / downloads
+*.tar.gz
+*.zip
+
+# Editor / OS
 .vscode/
+.idea/
+.DS_Store
 *.swp
 *~
