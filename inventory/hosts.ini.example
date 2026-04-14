@@ -1,13 +1,21 @@
-# Single server
+# ═══════════════════════════════════════════════════
+# Ansible Inventory – Example (placeholder IPs)
+#
+# Copy this file and fill in your real IPs:
+#   cp hosts.ini.example hosts.ini
+#
+# The real hosts.ini is in .gitignore and will not
+# be committed to the repository.
+# ═══════════════════════════════════════════════════
+
 [managed]
 managed-node-01 ansible_host=192.168.1.100
 
-# Group with multiple servers (example)
-# [webservers]
-# web01 ansible_host=192.168.1.101
-# web02 ansible_host=192.168.1.102
+# Uncomment and adjust for future Kubernetes nodes
+# [k8s_nodes]
+# k8s-node-01 ansible_host=192.168.x.x
+# k8s-node-02 ansible_host=192.168.x.x
 
-# Variables for all servers in this group
 [managed:vars]
 ansible_user=ansible
 ansible_python_interpreter=/usr/bin/python3
