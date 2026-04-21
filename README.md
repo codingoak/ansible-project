@@ -1,4 +1,4 @@
-# Ansible Learning Project - RHEL 10.1 Hardening
+# Ansible Learning Project - RHEL 10.1 Hardening (in progress)
 
 A structured learning environment for **Ansible** using a RHEL 10.1 control node.
 The goal is to write test and evolve **CIS-oriented hardening playbooks** against managed RHEL 10.1 nodes.
