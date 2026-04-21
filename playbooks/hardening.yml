@@ -1,32 +1,75 @@
+---
 ###############################################################
-# RHEL 10.1 Hardening Playbook
-# Goal: CIS-oriented baseline hardening for managed nodes
-# Author: Learning project
+# RHEL 10.1 – Complete CIS L2 Hardening Playbook
+# Purpose: CIS L2 Server Hardening
+# Access: SSH key-only from Control Node
+#
+# OpenSCAP target: CIS RHEL 10 Benchmark L2 – Server (v1.0.1)
+#
+# Usage:
+#   ansible-playbook hardening.yml --check --diff
+#   ansible-playbook hardening.yml
+#   ansible-playbook hardening.yml --tags ssh,sysctl
+#
+# WARNING: Always test in a non-production environment first!
+# WARNING: Keep a second SSH session open when applying SSH changes!
 ###############################################################
 
-- name: RHEL 10.1 Server Hardening
+- name: RHEL 10.1 CIS L2 Complete Hardening
   hosts: managed
   become: true
 
-  ###############################################################
-  # Variables
-  ###############################################################
   vars:
-    # SSH settings
-    ssh_port: 22
-    ssh_idle_timeout: 300
-    ssh_max_auth_tries: 3
+    # ╔═══════════════════════════════════════════════════╗
+    # ║  USER CONFIGURATION – Adjust these to your setup  ║
+    # ╚═══════════════════════════════════════════════════╝
 
-    # Password policies
-    password_min_length: 12
-    password_max_days: 90
+    # IP of the control node (only host allowed to SSH in)
+    control_node_ip: "192.168.x.x"
 
-    # Kernel networking
-    # Default: disabled for hardening
-    # Override for Kubernetes nodes via group_vars
+    # Kernel IP forwarding (enable only if this host routes traffic, e.g. K8s)
     kernel_ip_forward: "0"
+    kernel_ip_forward_v6: "0"
 
-    # Packages that must NOT be installed
+    # ╔═══════════════════════════════════════════════════╗
+    # ║  CIS DEFAULTS – Usually no changes needed         ║
+    # ╚═══════════════════════════════════════════════════╝
+
+    # ── SSH ────────────────────────────────────────────
+    ssh_port: 22
+    ssh_idle_timeout: 300             # ClientAliveInterval (seconds)
+    ssh_alive_count_max: 3
+    ssh_max_auth_tries: 3
+    ssh_max_sessions: 10
+    ssh_max_startups: "10:30:60"
+    ssh_login_grace_time: 60
+
+    # ── Password policies ─────────────────────────────
+    password_min_length: 14
+    password_max_days: 365
+    password_min_days: 1
+    password_warn_days: 7
+    password_inactive_days: 30
+    password_remember: 24             # Reject last N passwords
+    faillock_attempts: 5              # Lock after N failed attempts
+    faillock_unlock_time: 900         # Unlock after N seconds
+
+    # ── Session ───────────────────────────────────────
+    session_timeout: 900              # TMOUT in seconds
+    default_umask: "027"
+
+    # ── Audit ─────────────────────────────────────────
+    audit_buffer_size: 8192
+    audit_backlog_limit: 8192
+
+    # ── AIDE schedule (daily integrity check) ─────────
+    aide_cron_minute: "5"
+    aide_cron_hour: "4"
+
+    # ── Shared memory ─────────────────────────────────
+    shm_size: "512m"
+
+    # ── Packages to remove ────────────────────────────
     packages_to_remove:
       - telnet
       - rsh
@@ -35,113 +78,161 @@
       - ypserv
       - tftp
       - tftp-server
+      - vsftpd
+      - httpd
+      - dovecot
+      - squid
+      - net-snmp
+      - samba
 
-    # Services that should be disabled
+    # ── Services to disable ───────────────────────────
     services_to_disable:
       - bluetooth
       - avahi-daemon
       - cups
 
+    # ── Kernel modules to blacklist ───────────────────
+    kernel_module_blacklist:
+      # Filesystems
+      - cramfs
+      - freevxfs
+      - hfs
+      - hfsplus
+      - jffs2
+      - overlayfs
+      - squashfs
+      - udf
+      # USB storage
+      - usb-storage
+      # Network protocols
+      - atm
+      - can
+      - dccp
+      - firewire-core
+      - rds
+      - sctp
+      - tipc
+
+    # ── Login banner ──────────────────────────────────
+    login_banner: |
+      Authorized access only. Unauthorized access is prohibited.
+      All activity is logged and monitored.
+
   ###############################################################
-  # BLOCK 1: System updates
+  # TASKS
   ###############################################################
   tasks:
-    - name: "[1/7] Update all installed packages"
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 1: SYSTEM UPDATES
+    # ═══════════════════════════════════════════════════
+
+    - name: "[01] Update all packages to latest"
       ansible.builtin.dnf:
         name: "*"
         state: latest
-        update_cache: true
-      tags: update
+      tags: [update]
 
-    - name: "[1/7] Ensure dnf-automatic is installed"
+    - name: "[01] Install dnf-automatic"
       ansible.builtin.dnf:
         name: dnf-automatic
         state: present
-      tags: update
+      tags: [update]
 
-    - name: "[1/7] Enable automatic installation of updates"
+    - name: "[01] Enable automatic security updates"
       ansible.builtin.systemd:
         name: dnf-automatic-install.timer
         enabled: true
         state: started
-      tags: update
+      tags: [update]
 
-  ###############################################################
-  # BLOCK 2: Remove insecure packages
-  ###############################################################
-    - name: "[2/7] Remove insecure packages"
+    - name: "[01] Disable weak dependencies in DNF"
+      ansible.builtin.lineinfile:
+        path: /etc/dnf/dnf.conf
+        regexp: '^install_weak_deps'
+        line: 'install_weak_deps=False'
+        insertafter: '^\[main\]'
+      tags: [update]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 2: REMOVE INSECURE PACKAGES
+    # ═══════════════════════════════════════════════════
+
+    - name: "[02] Remove insecure packages"
       ansible.builtin.dnf:
         name: "{{ packages_to_remove }}"
         state: absent
-      tags: packages
+      tags: [packages]
 
-  ###############################################################
-  # BLOCK 3: Ensure SELinux is enforcing
-  ###############################################################
-    - name: "[3/7] Check SELinux status"
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 3: SELINUX
+    # ═══════════════════════════════════════════════════
+
+    - name: "[03] Check SELinux status"
       ansible.builtin.command: getenforce
       register: selinux_status
       changed_when: false
-      tags: selinux
+      tags: [selinux]
 
-    - name: "[3/7] Set SELinux to enforcing (persistent)"
+    - name: "[03] Set SELinux to enforcing (persistent)"
       ansible.builtin.lineinfile:
         path: /etc/selinux/config
         regexp: '^SELINUX='
         line: 'SELINUX=enforcing'
         backup: yes
-      tags: selinux
+      tags: [selinux]
 
-    - name: "[3/7] Set SELinux to enforcing (runtime)"
+    - name: "[03] Set SELinux to enforcing (runtime)"
       ansible.builtin.command: setenforce 1
       when: selinux_status.stdout != "Enforcing"
-      tags: selinux
+      tags: [selinux]
 
-  ###############################################################
-  # BLOCK 4: Harden SSH
-  ###############################################################
-    - name: "[4/7] SSH - Disable root login"
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 4: SSH HARDENING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[04] SSH - Disable root login"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitRootLogin'
         line: 'PermitRootLogin no'
         backup: yes
       notify: restart sshd
-      tags: ssh
+      tags: [ssh]
 
-    - name: "[4/7] SSH - Disable password authentication"
+    - name: "[04] SSH - Disable password authentication"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PasswordAuthentication'
         line: 'PasswordAuthentication no'
       notify: restart sshd
-      tags: ssh
+      tags: [ssh]
 
-    - name: "[4/7] SSH - Set idle timeout"
+    - name: "[04] SSH - Set idle timeout"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?ClientAliveInterval'
         line: "ClientAliveInterval {{ ssh_idle_timeout }}"
       notify: restart sshd
-      tags: ssh
+      tags: [ssh]
 
-    - name: "[4/7] SSH - Set max authentication attempts"
+    - name: "[04] SSH - Set max authentication attempts"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?MaxAuthTries'
         line: "MaxAuthTries {{ ssh_max_auth_tries }}"
       notify: restart sshd
-      tags: ssh
+      tags: [ssh]
 
-    - name: "[4/7] SSH - Disallow empty passwords"
+    - name: "[04] SSH - Disallow empty passwords"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitEmptyPasswords'
         line: 'PermitEmptyPasswords no'
       notify: restart sshd
-      tags: ssh
+      tags: [ssh]
 
-    - name: "[4/7] SSH - Allow secure algorithms only"
+    - name: "[04] SSH - Allow secure algorithms only"
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config
         marker: "# {mark} ANSIBLE MANAGED - Crypto settings"
@@ -150,57 +241,59 @@
           Ciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com
           MACs hmac-sha2-256,hmac-sha2-512
       notify: restart sshd
-      tags: ssh
+      tags: [ssh]
 
-  ###############################################################
-  # BLOCK 5: Configure firewall
-  ###############################################################
-    - name: "[5/7] Install firewalld"
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 5: FIREWALL
+    # ═══════════════════════════════════════════════════
+
+    - name: "[05] Install firewalld"
       ansible.builtin.dnf:
         name: firewalld
         state: present
-      tags: firewall
+      tags: [firewall]
 
-    - name: "[5/7] Enable and start firewalld"
+    - name: "[05] Enable and start firewalld"
       ansible.builtin.systemd:
         name: firewalld
         enabled: true
         state: started
-      tags: firewall
+      tags: [firewall]
 
-    - name: "[5/7] Set default zone to drop"
+    - name: "[05] Set default zone to drop"
       ansible.posix.firewalld:
         zone: drop
         state: enabled
         permanent: true
-      tags: firewall
+      tags: [firewall]
 
-    - name: "[5/7] Allow SSH in drop zone"
+    - name: "[05] Allow SSH in drop zone"
       ansible.posix.firewalld:
         zone: drop
         service: ssh
         state: enabled
         permanent: true
         immediate: true
-      tags: firewall
+      tags: [firewall]
 
-  ###############################################################
-  # BLOCK 6: Configure audit logging
-  ###############################################################
-    - name: "[6/7] Install auditd"
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 6: AUDIT LOGGING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[06] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
-      tags: audit
+      tags: [audit]
 
-    - name: "[6/7] Enable and start auditd"
+    - name: "[06] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
-      tags: audit
+      tags: [audit]
 
-    - name: "[6/7] Write audit rules"
+    - name: "[06] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -227,44 +320,39 @@
           -w /etc/hosts -p wa -k network
           -w /etc/sysconfig/network -p wa -k network
       notify: reload audit rules
-      tags: audit
+      tags: [audit]
 
-  ###############################################################
-  # BLOCK 7: Password policy & misc hardening
-  ###############################################################
-    - name: "[7/7] Install libpwquality"
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 7: PASSWORD POLICY + KERNEL + SERVICES
+    # ═══════════════════════════════════════════════════
+
+    - name: "[07] Install libpwquality"
       ansible.builtin.dnf:
         name: libpwquality
         state: present
-      tags: password
+      tags: [password]
 
-    - name: "[7/7] Set password quality policy"
+    - name: "[07] Set password quality policy"
       ansible.builtin.copy:
         dest: /etc/security/pwquality.conf
         backup: yes
         content: |
-          # Minimum length
           minlen = {{ password_min_length }}
-          # At least 1 digit
           dcredit = -1
-          # At least 1 uppercase letter
           ucredit = -1
-          # At least 1 lowercase letter
           lcredit = -1
-          # At least 1 special character
           ocredit = -1
-          # Max 3 consecutive identical characters
           maxrepeat = 3
-      tags: password
+      tags: [password]
 
-    - name: "[7/7] Set password expiry"
+    - name: "[07] Set password expiry (PASS_MAX_DAYS)"
       ansible.builtin.lineinfile:
         path: /etc/login.defs
         regexp: '^PASS_MAX_DAYS'
         line: "PASS_MAX_DAYS   {{ password_max_days }}"
-      tags: password
+      tags: [password]
 
-    - name: "[7/7] Kernel hardening via sysctl"
+    - name: "[07] Kernel hardening via sysctl"
       ansible.posix.sysctl:
         name: "{{ item.name }}"
         value: "{{ item.value }}"
@@ -272,34 +360,27 @@
         state: present
         reload: true
       loop:
-        # Disable IP forwarding (not a router)
-        - { name: 'net.ipv4.ip_forward', value: '0' }
-        # SYN flood protection
+        - { name: 'net.ipv4.ip_forward', value: '{{ kernel_ip_forward }}' }
         - { name: 'net.ipv4.tcp_syncookies', value: '1' }
-        # Ignore ICMP redirects
         - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
         - { name: 'net.ipv6.conf.all.accept_redirects', value: '0' }
-        # Disable source routing
         - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
-        # Enable reverse path filter
         - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
-        # Enable ASLR
         - { name: 'kernel.randomize_va_space', value: '2' }
-        # Restrict core dumps
         - { name: 'fs.suid_dumpable', value: '0' }
-      tags: sysctl
+      tags: [sysctl]
 
-    - name: "[7/7] Disable unnecessary services"
+    - name: "[07] Disable unnecessary services"
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: false
         state: stopped
       loop: "{{ services_to_disable }}"
       failed_when: false
-      tags: services
+      tags: [services]
 
   ###############################################################
-  # HANDLERS (defined early, implemented later)
+  # HANDLERS
   ###############################################################
   handlers:
     - name: restart sshd
