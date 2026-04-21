@@ -11,11 +11,6 @@
 [managed]
 managed-node-01 ansible_host=192.168.x.x
 
-# Uncomment and adjust for future Kubernetes nodes
-# [k8s_nodes]
-# k8s-node-01 ansible_host=192.168.x.x
-# k8s-node-02 ansible_host=192.168.x.x
-
 [managed:vars]
 ansible_user=ansible
 ansible_python_interpreter=/usr/bin/python3

@@ -1,7 +1,6 @@
-# Ansible Learning Project - RHEL 10.1 Hardening (in progress)
+# RHEL 10.1 CIS L2 Hardening with Ansible (in progress)
 
-A structured learning environment for **Ansible** using a RHEL 10.1 control node.
-The goal is to write test and evolve **CIS-oriented hardening playbooks** against managed RHEL 10.1 nodes.
+> **Goal:** Harden a RHEL 10.1 server to CIS Benchmark Level 2 – Server standard using a single Ansible playbook, managed via SSH keys from a dedicated control node.
 
 ## Project Structure
 
@@ -14,7 +13,7 @@ ansible-project/
 │   └── hosts.ini.example        # Inventory template
 ├── playbooks/
 │   ├── hello.yml                # First simple playbook
-│   └── hardening.yml            # CIS-oriented hardening playbook
+│   └── hardening.yml            # CIS L2 hardening playbook
 └── roles/                       # Roles go here (future)
 ```
 
@@ -46,6 +45,16 @@ cp inventory/hosts.ini.example inventory/hosts.ini
 vim inventory/hosts.ini
 ```
 
+## Getting Started (Quick)
+
+Only one value **must** be changed before running the playbook:
+
+1. Set `control_node_ip` in `playbooks/hardening.yml` to your control node's IP
+2. Set your managed node's IP in `inventory/hosts.ini`
+3. Run `ansible-playbook playbooks/hardening.yml --check --diff`
+
+Everything else has sensible defaults. See [Variables Reference](#variables-reference).
+
 ## Usage
 
 ```sh
@@ -63,6 +72,11 @@ ansible-playbook playbooks/hardening.yml
 
 # Run specific section only
 ansible-playbook playbooks/hardening.yml --tags ssh
+
+# Run in stages (recommended for first application)
+ansible-playbook playbooks/hardening.yml --tags ssh
+ansible-playbook playbooks/hardening.yml --tags firewall
+ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 ```
 
 ## Available Tags
@@ -70,15 +84,51 @@ ansible-playbook playbooks/hardening.yml --tags ssh
 | Tag | Playbook | Description |
 |---|---|---|
 | - | `hello.yml` | Get uptime, install EPEL and htop |
-| `update` | `hardening.yml` | System updates + dnf-automatic |
-| `packages` | `hardening.yml` | Remove insecure packages (telnet, rsh, ypbind, ypserv, tftp) |
+| `update` | `hardening.yml` | System updates + dnf-automatic + disable weak deps |
+| `packages` | `hardening.yml` | Remove insecure packages |
 | `selinux` | `hardening.yml` | Enforce SELinux |
 | `ssh` | `hardening.yml` | Harden SSH configuration |
-| `firewall` | `hardening.yml` | Configure firewalld |
+| `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
 | `audit` | `hardening.yml` | Enable audit logging |
 | `password` | `hardening.yml` | Password quality policy |
 | `sysctl` | `hardening.yml` | Kernel hardening |
 | `services` | `hardening.yml` | Disable unnecessary services |
+
+---
+
+## Variables Reference
+
+All playbook variables are defined in the `vars:` section, split into two groups:
+
+**User Configuration** — adjust to your environment:
+
+```yaml
+control_node_ip: "192.168.x.x"       # CHANGE: only host allowed to SSH in
+kernel_ip_forward: "0"                # enable only if host routes traffic
+kernel_ip_forward_v6: "0"
+```
+
+**CIS Defaults** — usually no changes needed:
+
+```yaml
+# SSH
+ssh_idle_timeout: 300                 ssh_max_auth_tries: 3
+ssh_alive_count_max: 3                ssh_max_sessions: 10
+ssh_login_grace_time: 60              ssh_max_startups: "10:30:60"
+
+# Password policies
+password_min_length: 14               password_remember: 24
+password_max_days: 365                faillock_attempts: 5
+password_min_days: 1                  faillock_unlock_time: 900
+
+# Session
+session_timeout: 900                  default_umask: "027"
+
+# Infrastructure
+audit_buffer_size: 8192               audit_backlog_limit: 8192
+aide_cron_minute: "5"                 aide_cron_hour: "4"
+shm_size: "512m"
+```
 
 ---
 
@@ -98,16 +148,12 @@ A simple introductory playbook to verify the Ansible setup:
 
 ### hardening.yml
 
-#### Block 1 – System updates
-Block 1 establishes a secure and up-to-date system baseline:
+#### Block 01 – System updates
+Establishes a secure and up-to-date system baseline:
 - Updates all installed packages
 - Installs `dnf-automatic`
 - Enables **dnf-automatic-install.timer** on RHEL 10
-
-RHEL 10 provides multiple dnf-automatic timers.
-This project explicitly enables **dnf-automatic-install.timer**, which
-downloads and installs updates automatically, independent of the settings
-in `/etc/dnf/automatic.conf`.
+- Disables installation of weak dependencies in DNF
 
 > **Note:** Automatic installation of updates may occasionally require a reboot
 > (e.g. kernel updates). In production environments consider using
@@ -115,41 +161,36 @@ in `/etc/dnf/automatic.conf`.
 
 ---
 
-#### Block 2 – Remove insecure packages
-Block 2 removes legacy and insecure packages that are not needed on a modern RHEL 10 server:
+#### Block 02 – Remove insecure packages
+Removes legacy and insecure packages that are not needed on a modern RHEL 10 server:
 
 | Package | Reason |
 |---|---|
 | `telnet` | Transmits data including passwords in plaintext |
-| `rsh` | Remote shell without encryption, replaced by SSH |
-| `rsh-server` | Server component of rsh |
-| `ypbind` | NIS client, outdated and insecure directory service |
-| `ypserv` | NIS server, outdated and insecure directory service |
-| `tftp` | Trivial FTP without authentication or encryption |
-| `tftp-server` | Server component of tftp |
-
-> **Note:** If none of these packages are installed, all tasks will show `ok`
-> instead of `changed` – this is expected and correct behavior (idempotent).
+| `rsh`, `rsh-server` | Remote shell without encryption, replaced by SSH |
+| `ypbind`, `ypserv` | NIS client/server, outdated and insecure |
+| `tftp`, `tftp-server` | Trivial FTP without authentication or encryption |
+| `vsftpd` | FTP server, replaced by SFTP/SCP |
+| `httpd` | Web server, not needed for base hardening |
+| `dovecot` | IMAP/POP3 server |
+| `squid` | Proxy server |
+| `net-snmp` | SNMP agent, potential info leak |
+| `samba` | SMB file sharing |
 
 ---
 
-#### Block 3 – Ensure SELinux is enforcing
-Block 3 ensures SELinux is running in enforcing mode on the managed node:
+#### Block 03 – Ensure SELinux is enforcing
+Ensures SELinux is running in enforcing mode:
 - Checks the current SELinux status at runtime via `getenforce`
 - Sets SELinux to `enforcing` persistently in `/etc/selinux/config`
 - Sets SELinux to `enforcing` at runtime via `setenforce 1` if not already active
-
-SELinux (Security-Enhanced Linux) is a Mandatory Access Control (MAC) system
-built into the Linux kernel. In enforcing mode, it actively blocks any action
-that violates the defined security policy – even for the root user.
 
 > **Note:** RHEL 10.1 ships with SELinux in enforcing mode by default.
 > This block ensures it has not been accidentally or intentionally disabled.
 
 ---
 
-#### Block 4 – Harden SSH
-Block 4 hardens the SSH configuration on the managed node:
+#### Block 04 – Harden SSH
 
 | Setting | Value | Reason |
 |---|---|---|
@@ -157,7 +198,6 @@ Block 4 hardens the SSH configuration on the managed node:
 | `PasswordAuthentication` | `no` | Forces SSH key-based authentication |
 | `ClientAliveInterval` | `300` | Disconnects idle sessions after 5 minutes |
 | `MaxAuthTries` | `3` | Limits brute-force attempts |
-| `X11Forwarding` | `no` | Disables unnecessary graphical forwarding |
 | `PermitEmptyPasswords` | `no` | Prevents login with empty passwords |
 
 Additionally enforces secure cryptographic algorithms:
@@ -173,11 +213,11 @@ Additionally enforces secure cryptographic algorithms:
 
 ---
 
-#### Block 5 – Configure firewall
-Block 5 configures firewalld on the managed node:
+#### Block 05 – Configure firewall
+Configures firewalld:
 - Installs firewalld if not present
 - Enables and starts the firewalld service
-- Sets the default zone to `drop` – all incoming traffic is blocked by default
+- Sets the default zone to `drop`
 - Explicitly allows SSH so the managed node remains reachable
 
 | Zone | Default policy | Allowed services |
@@ -185,13 +225,13 @@ Block 5 configures firewalld on the managed node:
 | `drop` | Block all incoming traffic | `ssh` |
 
 > **Note:** The `drop` zone silently discards all packets that do not match
-> an explicit rule – no ICMP reject message is sent back to the sender.
-> This makes the server invisible to port scanners.
+> an explicit rule. To allow additional services, add firewalld rules in a
+> separate playbook or role.
 
 ---
 
-#### Block 6 – Configure audit logging
-Block 6 sets up auditd to monitor critical system activity:
+#### Block 06 – Configure audit logging
+Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
 
@@ -204,24 +244,21 @@ Block 6 sets up auditd to monitor critical system activity:
 | `exec_root` | All commands executed as root via sudo | Always |
 | `network` | `/etc/hosts`, `/etc/sysconfig/network` | Write, attribute change |
 
-> **Note:** A handler reloads the audit rules via `augenrules --load`
-> automatically after any change to the rules file.
-
 ---
 
-#### Block 7 – Password policy, kernel hardening & services
+#### Block 07 – Password policy, kernel hardening & services
 
 **Password policy** – enforced via `pwquality` and `login.defs`:
 
 | Setting | Value | Reason |
 |---|---|---|
-| `minlen` | `12` | Minimum password length |
+| `minlen` | `14` | Minimum password length |
 | `dcredit` | `-1` | At least 1 digit required |
 | `ucredit` | `-1` | At least 1 uppercase letter required |
 | `lcredit` | `-1` | At least 1 lowercase letter required |
 | `ocredit` | `-1` | At least 1 special character required |
 | `maxrepeat` | `3` | Max 3 consecutive identical characters |
-| `PASS_MAX_DAYS` | `90` | Password expires after 90 days |
+| `PASS_MAX_DAYS` | `365` | Password expires after 365 days |
 
 **Kernel hardening** – enforced via `sysctl`:
 
@@ -255,25 +292,38 @@ After running the full hardening playbook, verify the results with OpenSCAP:
 
 ```sh
 # Install OpenSCAP on the managed node
-ansible managed -m ansible.builtin.dnf -a "name=openscap-scanner,scap-security-guide state=present" --become
+ansible managed -b -m ansible.builtin.dnf \
+  -a "name=openscap-scanner,scap-security-guide state=present"
 
 # Run CIS benchmark scan
-ansible managed -m ansible.builtin.command -a \
+ansible managed -b -m command -a \
   "oscap xccdf eval \
    --profile xccdf_org.ssgproject.content_profile_cis \
    --report /tmp/scap-report.html \
-   /usr/share/xml/scap/ssg/content/ssg-rhel10-ds.xml" -- become
+   /usr/share/xml/scap/ssg/content/ssg-rhel10-ds.xml"
 
 # Fetch report to control node
-ansible managed -m ansible.builtin.fetch -a \
-  "src=/tmp/scap-report.html dest=./scap-reports/ flat=no"
+ansible managed -m ansible.builtin.fetch \
+  -a "src=/tmp/scap-report.html dest=./scap-reports/ flat=no"
 ```
 
-The HTML report shows which CIS controls pass or fail and provides
-remediation guidance for any findings.
+> **Note:** Do not commit OpenSCAP reports to the repository — they contain
+> real IPs, MAC addresses, and hostnames. The `scap-reports/` directory is in `.gitignore`.
 
+---
 
 ## Known Issues
 
 - RHEL 10 ships with GPG v6 which is incompatible with Ansible's `rpm_key` module.
   EPEL GPG key is therefore imported via `rpm --import` directly.
+
+---
+
+## Resources
+
+| Topic | Link |
+|-------|------|
+| Ansible Documentation | [docs.ansible.com](https://docs.ansible.com) |
+| CIS Benchmarks | [cisecurity.org/benchmarks](https://www.cisecurity.org/benchmarks) |
+| RHEL Security Guide | [access.redhat.com/documentation](https://access.redhat.com/documentation) |
+| OpenSCAP | [open-scap.org](https://www.open-scap.org) |

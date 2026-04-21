@@ -26,9 +26,6 @@ secrets/
 # OpenSCAP reports (may contain IPs, MACs, hostnames)
 scap-reports/
 
-# Minecraft Bedrock world data (large binary files)
-bds-data/
-
 # Ansible facts cache
 .ansible/
 fact_cache/
