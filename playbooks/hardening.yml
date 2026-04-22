@@ -124,7 +124,7 @@
   tasks:
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 1: SYSTEM UPDATES
+    #  BLOCK 01: SYSTEM UPDATES
     # ═══════════════════════════════════════════════════
 
     - name: "[01] Update all packages to latest"
@@ -155,7 +155,7 @@
       tags: [update]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 2: REMOVE INSECURE PACKAGES
+    #  BLOCK 02: REMOVE INSECURE PACKAGES
     # ═══════════════════════════════════════════════════
 
     - name: "[02] Remove insecure packages"
@@ -165,7 +165,7 @@
       tags: [packages]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 3: SELINUX
+    #  BLOCK 03: SELINUX
     # ═══════════════════════════════════════════════════
 
     - name: "[03] Check SELinux status"
@@ -188,10 +188,65 @@
       tags: [selinux]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 4: SSH HARDENING
+    #  BLOCK 04: CRYPTO POLICY
     # ═══════════════════════════════════════════════════
 
-    - name: "[04] SSH - Disable root login"
+    - name: "[04] Create crypto policy module directory"
+      ansible.builtin.file:
+        path: /etc/crypto-policies/policies/modules
+        state: directory
+        mode: '0755'
+      tags: [crypto]
+
+    - name: "[04] Create CIS crypto policy module"
+      ansible.builtin.copy:
+        dest: /etc/crypto-policies/policies/modules/CIS.pmod
+        mode: '0644'
+        content: |
+          min_dh_size = 2048
+          min_rsa_size = 2048
+          sha1_in_certs = 0
+          ssh_certs = 0
+          ssh_etm = 0
+      notify: apply crypto policy
+      tags: [crypto]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 05: LOGIN BANNERS
+    # ═══════════════════════════════════════════════════
+
+    - name: "[05] Set login banner /etc/issue"
+      ansible.builtin.copy:
+        dest: /etc/issue
+        content: "{{ login_banner }}"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [banner]
+
+    - name: "[05] Set login banner /etc/issue.net"
+      ansible.builtin.copy:
+        dest: /etc/issue.net
+        content: "{{ login_banner }}"
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [banner]
+
+    - name: "[05] Clear MOTD (prevent OS info leak)"
+      ansible.builtin.copy:
+        dest: /etc/motd
+        content: ""
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [banner]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 06: SSH HARDENING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[06] SSH - Disable root login"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitRootLogin'
@@ -200,7 +255,7 @@
       notify: restart sshd
       tags: [ssh]
 
-    - name: "[04] SSH - Disable password authentication"
+    - name: "[06] SSH - Disable password authentication"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PasswordAuthentication'
@@ -208,7 +263,7 @@
       notify: restart sshd
       tags: [ssh]
 
-    - name: "[04] SSH - Set idle timeout"
+    - name: "[06] SSH - Set idle timeout"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?ClientAliveInterval'
@@ -216,7 +271,7 @@
       notify: restart sshd
       tags: [ssh]
 
-    - name: "[04] SSH - Set max authentication attempts"
+    - name: "[06] SSH - Set max authentication attempts"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?MaxAuthTries'
@@ -224,7 +279,7 @@
       notify: restart sshd
       tags: [ssh]
 
-    - name: "[04] SSH - Disallow empty passwords"
+    - name: "[06] SSH - Disallow empty passwords"
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitEmptyPasswords'
@@ -232,7 +287,7 @@
       notify: restart sshd
       tags: [ssh]
 
-    - name: "[04] SSH - Allow secure algorithms only"
+    - name: "[06] SSH - Allow secure algorithms only"
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config
         marker: "# {mark} ANSIBLE MANAGED - Crypto settings"
@@ -244,30 +299,55 @@
       tags: [ssh]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 5: FIREWALL
+    #  BLOCK 07: SUDO HARDENING
     # ═══════════════════════════════════════════════════
 
-    - name: "[05] Install firewalld"
+    - name: "[07] Sudo – Enable use_pty"
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/99-hardening
+        line: 'Defaults use_pty'
+        create: yes
+        owner: root
+        group: root
+        mode: '0440'
+        validate: 'visudo -cf %s'
+      tags: [sudo]
+
+    - name: "[07] Sudo – Enable logfile"
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/99-hardening
+        line: 'Defaults logfile="/var/log/sudo.log"'
+        owner: root
+        group: root
+        mode: '0440'
+        validate: 'visudo -cf %s'
+      tags: [sudo]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 08: FIREWALL
+    # ═══════════════════════════════════════════════════
+
+    - name: "[08] Install firewalld"
       ansible.builtin.dnf:
         name: firewalld
         state: present
       tags: [firewall]
 
-    - name: "[05] Enable and start firewalld"
+    - name: "[08] Enable and start firewalld"
       ansible.builtin.systemd:
         name: firewalld
         enabled: true
         state: started
       tags: [firewall]
 
-    - name: "[05] Set default zone to drop"
+    - name: "[08] Set default zone to drop"
       ansible.posix.firewalld:
         zone: drop
         state: enabled
         permanent: true
       tags: [firewall]
 
-    - name: "[05] Allow SSH in drop zone"
+    - name: "[08] Allow SSH in drop zone"
       ansible.posix.firewalld:
         zone: drop
         service: ssh
@@ -277,23 +357,23 @@
       tags: [firewall]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 6: AUDIT LOGGING
+    #  BLOCK 09: AUDIT LOGGING
     # ═══════════════════════════════════════════════════
 
-    - name: "[06] Install auditd"
+    - name: "[09] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
       tags: [audit]
 
-    - name: "[06] Enable and start auditd"
+    - name: "[09] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[06] Write audit rules"
+    - name: "[09] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -323,16 +403,16 @@
       tags: [audit]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 7: PASSWORD POLICY + KERNEL + SERVICES
+    #  BLOCK 10: PASSWORD POLICY + KERNEL + SERVICES
     # ═══════════════════════════════════════════════════
 
-    - name: "[07] Install libpwquality"
+    - name: "[10] Install libpwquality"
       ansible.builtin.dnf:
         name: libpwquality
         state: present
       tags: [password]
 
-    - name: "[07] Set password quality policy"
+    - name: "[10] Set password quality policy"
       ansible.builtin.copy:
         dest: /etc/security/pwquality.conf
         backup: yes
@@ -345,14 +425,14 @@
           maxrepeat = 3
       tags: [password]
 
-    - name: "[07] Set password expiry (PASS_MAX_DAYS)"
+    - name: "[10] Set password expiry (PASS_MAX_DAYS)"
       ansible.builtin.lineinfile:
         path: /etc/login.defs
         regexp: '^PASS_MAX_DAYS'
         line: "PASS_MAX_DAYS   {{ password_max_days }}"
       tags: [password]
 
-    - name: "[07] Kernel hardening via sysctl"
+    - name: "[10] Kernel hardening via sysctl"
       ansible.posix.sysctl:
         name: "{{ item.name }}"
         value: "{{ item.value }}"
@@ -370,7 +450,7 @@
         - { name: 'fs.suid_dumpable', value: '0' }
       tags: [sysctl]
 
-    - name: "[07] Disable unnecessary services"
+    - name: "[10] Disable unnecessary services"
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: false
@@ -390,3 +470,6 @@
 
     - name: reload audit rules
       ansible.builtin.command: augenrules --load
+
+    - name: apply crypto policy
+      ansible.builtin.command: update-crypto-policies --set DEFAULT:CIS

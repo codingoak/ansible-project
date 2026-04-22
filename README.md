@@ -87,7 +87,10 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `update` | `hardening.yml` | System updates + dnf-automatic + disable weak deps |
 | `packages` | `hardening.yml` | Remove insecure packages |
 | `selinux` | `hardening.yml` | Enforce SELinux |
+| `crypto` | `hardening.yml` | CIS crypto policy module |
+| `banner` | `hardening.yml` | Login banners (/etc/issue, /etc/issue.net, MOTD) |
 | `ssh` | `hardening.yml` | Harden SSH configuration |
+| `sudo` | `hardening.yml` | Sudo use_pty and logfile |
 | `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
 | `audit` | `hardening.yml` | Enable audit logging |
 | `password` | `hardening.yml` | Password quality policy |
@@ -190,7 +193,32 @@ Ensures SELinux is running in enforcing mode:
 
 ---
 
-#### Block 04 – Harden SSH
+#### Block 04 – Crypto policy
+Implements a custom CIS-compliant crypto policy module:
+- Creates `/etc/crypto-policies/policies/modules/CIS.pmod`
+- Enforces minimum 2048-bit DH and RSA key sizes
+- Disables SHA1 in certificates
+- Disables SSH certificates and Encrypt-then-MAC
+- Applies via `update-crypto-policies --set DEFAULT:CIS`
+
+The system-wide crypto policy affects all applications that use OpenSSL, GnuTLS, NSS, or libssh — including SSH, TLS, and DNSSEC.
+
+---
+
+#### Block 05 – Login banners
+Sets warning banners displayed before and after login:
+
+| File | Purpose |
+|---|---|
+| `/etc/issue` | Banner shown on local terminal before login |
+| `/etc/issue.net` | Banner shown for remote (SSH) connections |
+| `/etc/motd` | Cleared — prevents OS version info leak after login |
+
+All files are set to `root:root` ownership with mode `0644`. The banner text is defined in the `login_banner` variable.
+
+---
+
+#### Block 06 – Harden SSH
 
 | Setting | Value | Reason |
 |---|---|---|
@@ -213,7 +241,19 @@ Additionally enforces secure cryptographic algorithms:
 
 ---
 
-#### Block 05 – Configure firewall
+#### Block 07 – Sudo hardening
+Hardens sudo configuration via `/etc/sudoers.d/99-hardening`:
+
+| Setting | Effect |
+|---|---|
+| `Defaults use_pty` | Forces sudo to allocate a pseudo-terminal, preventing background processes from persisting after the session ends |
+| `Defaults logfile="/var/log/sudo.log"` | Logs all sudo commands to a dedicated file for auditing |
+
+Both settings are validated with `visudo -cf` before being applied to prevent lockouts from syntax errors.
+
+---
+
+#### Block 08 – Configure firewall
 Configures firewalld:
 - Installs firewalld if not present
 - Enables and starts the firewalld service
@@ -230,7 +270,7 @@ Configures firewalld:
 
 ---
 
-#### Block 06 – Configure audit logging
+#### Block 09 – Configure audit logging
 Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
@@ -246,7 +286,7 @@ Sets up auditd to monitor critical system activity:
 
 ---
 
-#### Block 07 – Password policy, kernel hardening & services
+#### Block 10 – Password policy, kernel hardening & services
 
 **Password policy** – enforced via `pwquality` and `login.defs`:
 
