@@ -280,19 +280,24 @@ Both settings are validated with `visudo -cf` before being applied to prevent lo
 ---
 
 #### Block 08 – Configure firewall
-Configures firewalld:
+Configures firewalld with a strict inbound policy:
 - Installs firewalld if not present
 - Enables and starts the firewalld service
 - Sets the default zone to `drop`
-- Explicitly allows SSH so the managed node remains reachable
+- Allows SSH **only** from the control node IP (rich rule)
+- Trusts loopback traffic for internal services
 
-| Zone | Default policy | Allowed services |
+| Zone | Default policy | Allowed traffic |
 |---|---|---|
-| `drop` | Block all incoming traffic | `ssh` |
+| `drop` | Block all incoming traffic | SSH from `control_node_ip` only |
+| `trusted` | Accept all traffic | Loopback interface (`lo`) |
 
-> **Note:** The `drop` zone silently discards all packets that do not match
-> an explicit rule. To allow additional services, add firewalld rules in a
-> separate playbook or role.
+The `control_node_ip` variable must be set to the IP address of the machine running Ansible. No other host can reach the server via SSH.
+
+> **WARNING:** If `control_node_ip` is set incorrectly, you will lose SSH
+> access after applying the firewall rules. Always keep a second SSH session
+> open and test access before closing it. To allow additional services
+> (e.g. web, game servers), add firewalld rules in a separate playbook or role.
 
 ---
 
