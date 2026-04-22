@@ -313,25 +313,169 @@
       tags: [sudo]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 08: FIREWALL
+    #  BLOCK 08: PAM – FAILLOCK + PASSWORD HISTORY
+    # ═══════════════════════════════════════════════════
+
+    - name: "[08] Select authselect profile (sssd with faillock)"
+      ansible.builtin.command:
+        cmd: authselect select sssd with-faillock with-pamaccess --force
+      register: authselect_result
+      changed_when: "'already' not in authselect_result.stdout"
+      failed_when: authselect_result.rc != 0
+      tags: [pam]
+
+    - name: "[08] Configure faillock"
+      ansible.builtin.copy:
+        dest: /etc/security/faillock.conf
+        backup: yes
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # CIS: Lock account after failed login attempts
+          deny = {{ faillock_attempts }}
+          unlock_time = {{ faillock_unlock_time }}
+          even_deny_root
+          root_unlock_time = {{ faillock_unlock_time }}
+      tags: [pam]
+
+    - name: "[08] Ensure pam_pwquality in system-auth"
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/system-auth
+        regexp: 'pam_pwquality\.so'
+        line: 'password    requisite     pam_pwquality.so retry=3 enforce_for_root'
+        insertbefore: 'pam_unix\.so'
+      tags: [pam]
+
+    - name: "[08] Ensure pam_pwquality in password-auth"
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/password-auth
+        regexp: 'pam_pwquality\.so'
+        line: 'password    requisite     pam_pwquality.so retry=3 enforce_for_root'
+        insertbefore: 'pam_unix\.so'
+      tags: [pam]
+
+    - name: "[08] Set password history in system-auth (pam_unix remember)"
+      ansible.builtin.replace:
+        path: /etc/pam.d/system-auth
+        regexp: '(password\s+sufficient\s+pam_unix\.so.*?)(\s+remember=\d+)?$'
+        replace: '\1 remember={{ password_remember }} use_authtok'
+      tags: [pam]
+
+    - name: "[08] Set password history in password-auth (pam_unix remember)"
+      ansible.builtin.replace:
+        path: /etc/pam.d/password-auth
+        regexp: '(password\s+sufficient\s+pam_unix\.so.*?)(\s+remember=\d+)?$'
+        replace: '\1 remember={{ password_remember }} use_authtok'
+      tags: [pam]
+
+    - name: "[08] Enable pam_pwhistory for root"
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/system-auth
+        regexp: 'pam_pwhistory\.so'
+        line: 'password    requisite     pam_pwhistory.so remember={{ password_remember }} enforce_for_root use_authtok'
+        insertbefore: 'pam_unix\.so'
+      tags: [pam]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 09: PASSWORD QUALITY REQUIREMENTS
+    # ═══════════════════════════════════════════════════
+
+    - name: "[09] Install libpwquality"
+      ansible.builtin.dnf:
+        name: libpwquality
+        state: present
+      tags: [password]
+
+    - name: "[09] Set password complexity requirements"
+      ansible.builtin.copy:
+        dest: /etc/security/pwquality.conf
+        backup: yes
+        content: |
+          minlen = {{ password_min_length }}
+          dcredit = -1
+          ucredit = -1
+          lcredit = -1
+          ocredit = -1
+          maxrepeat = 3
+          maxsequence = 3
+          difok = 2
+          dictcheck = 1
+          minclass = 4
+          enforce_for_root
+      tags: [password]
+
+    - name: "[09] Set PASS_MAX_DAYS in login.defs"
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^PASS_MAX_DAYS'
+        line: "PASS_MAX_DAYS   {{ password_max_days }}"
+      tags: [password]
+
+    - name: "[09] Set PASS_MIN_DAYS in login.defs"
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^PASS_MIN_DAYS'
+        line: "PASS_MIN_DAYS   {{ password_min_days }}"
+      tags: [password]
+
+    - name: "[09] Set PASS_WARN_AGE in login.defs"
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^PASS_WARN_AGE'
+        line: "PASS_WARN_AGE   {{ password_warn_days }}"
+      tags: [password]
+
+    - name: "[09] Set inactivity lock for new accounts"
+      ansible.builtin.command:
+        cmd: "useradd -D -f {{ password_inactive_days }}"
+      changed_when: true
+      tags: [password]
+
+    - name: "[09] Apply PASS_MIN_DAYS to existing users"
+      ansible.builtin.shell: |
+        for user in $(awk -F: '($3 >= 1000 && $1 != "nobody") {print $1}' /etc/passwd); do
+          chage --mindays {{ password_min_days }} "$user"
+        done
+      changed_when: true
+      tags: [password]
+
+    - name: "[09] Apply PASS_MAX_DAYS to existing users"
+      ansible.builtin.shell: |
+        for user in $(awk -F: '($3 >= 1000 && $1 != "nobody") {print $1}' /etc/passwd); do
+          chage --maxdays {{ password_max_days }} "$user"
+        done
+      changed_when: true
+      tags: [password]
+
+    - name: "[09] Apply inactivity lock to existing users"
+      ansible.builtin.shell: |
+        for user in $(awk -F: '($3 >= 1000 && $1 != "nobody") {print $1}' /etc/passwd); do
+          chage --inactive {{ password_inactive_days }} "$user"
+        done
+      changed_when: true
+      tags: [password]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 10: FIREWALL
     #  SSH: restricted to Control Node IP only
     #  Default zone: drop (all inbound blocked)
     # ═══════════════════════════════════════════════════
 
-    - name: "[08] Install and enable firewalld"
+    - name: "[10] Install and enable firewalld"
       ansible.builtin.dnf:
         name: firewalld
         state: present
       tags: [firewall]
 
-    - name: "[08] Start firewalld"
+    - name: "[10] Start firewalld"
       ansible.builtin.systemd:
         name: firewalld
         enabled: true
         state: started
       tags: [firewall]
 
-    - name: "[08] Set default zone to drop"
+    - name: "[10] Set default zone to drop"
       ansible.builtin.command:
         cmd: firewall-cmd --set-default-zone=drop
       register: fwzone
@@ -339,7 +483,7 @@
       failed_when: false
       tags: [firewall]
 
-    - name: "[08] Allow SSH only from Control Node"
+    - name: "[10] Allow SSH only from Control Node"
       ansible.posix.firewalld:
         zone: drop
         rich_rule: 'rule family="ipv4" source address="{{ control_node_ip }}" service name="ssh" accept'
@@ -348,7 +492,7 @@
         immediate: true
       tags: [firewall]
 
-    - name: "[08] Trust loopback traffic"
+    - name: "[10] Trust loopback traffic"
       ansible.posix.firewalld:
         zone: trusted
         interface: lo
@@ -358,23 +502,23 @@
       tags: [firewall]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 09: AUDIT LOGGING
+    #  BLOCK 11: AUDIT LOGGING
     # ═══════════════════════════════════════════════════
 
-    - name: "[09] Install auditd"
+    - name: "[11] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
       tags: [audit]
 
-    - name: "[09] Enable and start auditd"
+    - name: "[11] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[09] Write audit rules"
+    - name: "[11] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -404,36 +548,10 @@
       tags: [audit]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 10: PASSWORD POLICY + KERNEL + SERVICES
+    #  BLOCK 12: KERNEL HARDENING + SERVICES
     # ═══════════════════════════════════════════════════
 
-    - name: "[10] Install libpwquality"
-      ansible.builtin.dnf:
-        name: libpwquality
-        state: present
-      tags: [password]
-
-    - name: "[10] Set password quality policy"
-      ansible.builtin.copy:
-        dest: /etc/security/pwquality.conf
-        backup: yes
-        content: |
-          minlen = {{ password_min_length }}
-          dcredit = -1
-          ucredit = -1
-          lcredit = -1
-          ocredit = -1
-          maxrepeat = 3
-      tags: [password]
-
-    - name: "[10] Set password expiry (PASS_MAX_DAYS)"
-      ansible.builtin.lineinfile:
-        path: /etc/login.defs
-        regexp: '^PASS_MAX_DAYS'
-        line: "PASS_MAX_DAYS   {{ password_max_days }}"
-      tags: [password]
-
-    - name: "[10] Kernel hardening via sysctl"
+    - name: "[12] Kernel hardening via sysctl"
       ansible.posix.sysctl:
         name: "{{ item.name }}"
         value: "{{ item.value }}"
@@ -451,7 +569,7 @@
         - { name: 'fs.suid_dumpable', value: '0' }
       tags: [sysctl]
 
-    - name: "[10] Disable unnecessary services"
+    - name: "[12] Disable unnecessary services"
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: false

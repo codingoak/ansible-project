@@ -1,4 +1,4 @@
-# RHEL 10.1 CIS L2 Hardening with Ansible (in progress)
+# RHEL 10.1 CIS L2 Hardening with Ansible
 
 > **Goal:** Harden a RHEL 10.1 server to CIS Benchmark Level 2 – Server standard using a single Ansible playbook, managed via SSH keys from a dedicated control node.
 
@@ -91,9 +91,10 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `banner` | `hardening.yml` | Login banners (/etc/issue, /etc/issue.net, MOTD) |
 | `ssh` | `hardening.yml` | Complete SSH hardening (15+ directives) |
 | `sudo` | `hardening.yml` | Sudo use_pty and logfile |
+| `pam` | `hardening.yml` | PAM faillock, password history, pam_pwquality |
+| `password` | `hardening.yml` | Password quality + expiry + apply to existing users |
 | `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
 | `audit` | `hardening.yml` | Enable audit logging |
-| `password` | `hardening.yml` | Password quality policy |
 | `sysctl` | `hardening.yml` | Kernel hardening |
 | `services` | `hardening.yml` | Disable unnecessary services |
 
@@ -279,7 +280,62 @@ Both settings are validated with `visudo -cf` before being applied to prevent lo
 
 ---
 
-#### Block 08 – Configure firewall
+#### Block 08 – PAM faillock and password history
+Configures PAM (Pluggable Authentication Modules) for account lockout and password reuse prevention:
+
+**authselect profile:**
+Selects the `sssd` profile with `faillock` and `pamaccess` features enabled. This configures the PAM stack automatically with the correct module order.
+
+**Faillock configuration** (`/etc/security/faillock.conf`):
+
+| Setting | Value | Effect |
+|---|---|---|
+| `deny` | `5` | Lock account after 5 failed attempts |
+| `unlock_time` | `900` | Auto-unlock after 15 minutes |
+| `even_deny_root` | enabled | Root account is also locked |
+| `root_unlock_time` | `900` | Root auto-unlock after 15 minutes |
+
+**Password history:**
+- `pam_pwquality.so` enforced in both `system-auth` and `password-auth` with `enforce_for_root`
+- `pam_unix.so` configured with `remember=24` to reject the last 24 passwords
+- `pam_pwhistory.so` enabled for root with `enforce_for_root`
+
+> **Note:** The `authselect select` command resets the PAM stack on each run.
+> Subsequent tasks re-apply the custom PAM modifications. This causes some
+> tasks to show `changed` on every playbook run — this is expected behavior.
+
+---
+
+#### Block 09 – Password quality requirements
+Expanded password policy enforced via `pwquality.conf` and `login.defs`:
+
+| Setting | Value | Reason |
+|---|---|---|
+| `minlen` | `14` | Minimum password length |
+| `dcredit` | `-1` | At least 1 digit required |
+| `ucredit` | `-1` | At least 1 uppercase letter required |
+| `lcredit` | `-1` | At least 1 lowercase letter required |
+| `ocredit` | `-1` | At least 1 special character required |
+| `maxrepeat` | `3` | Max 3 consecutive identical characters |
+| `maxsequence` | `3` | Max 3 sequential characters (e.g. "abc") |
+| `difok` | `2` | Min 2 characters must differ from old password |
+| `dictcheck` | `1` | Reject dictionary words |
+| `minclass` | `4` | All 4 character classes required |
+| `enforce_for_root` | enabled | Root must also comply |
+
+**Login.defs settings:**
+
+| Setting | Value | Effect |
+|---|---|---|
+| `PASS_MAX_DAYS` | `365` | Password expires after 365 days |
+| `PASS_MIN_DAYS` | `1` | Minimum 1 day between changes |
+| `PASS_WARN_AGE` | `7` | Warn 7 days before expiry |
+
+**Applied to existing users** via `chage` for PASS_MIN_DAYS, PASS_MAX_DAYS, and inactivity lock. New accounts inherit defaults via `useradd -D -f 30`.
+
+---
+
+#### Block 10 – Configure firewall
 Configures firewalld with a strict inbound policy:
 - Installs firewalld if not present
 - Enables and starts the firewalld service
@@ -301,7 +357,7 @@ The `control_node_ip` variable must be set to the IP address of the machine runn
 
 ---
 
-#### Block 09 – Configure audit logging
+#### Block 11 – Configure audit logging
 Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
@@ -317,19 +373,7 @@ Sets up auditd to monitor critical system activity:
 
 ---
 
-#### Block 10 – Password policy, kernel hardening & services
-
-**Password policy** – enforced via `pwquality` and `login.defs`:
-
-| Setting | Value | Reason |
-|---|---|---|
-| `minlen` | `14` | Minimum password length |
-| `dcredit` | `-1` | At least 1 digit required |
-| `ucredit` | `-1` | At least 1 uppercase letter required |
-| `lcredit` | `-1` | At least 1 lowercase letter required |
-| `ocredit` | `-1` | At least 1 special character required |
-| `maxrepeat` | `3` | Max 3 consecutive identical characters |
-| `PASS_MAX_DAYS` | `365` | Password expires after 365 days |
+#### Block 12 – Kernel hardening & services
 
 **Kernel hardening** – enforced via `sysctl`:
 
