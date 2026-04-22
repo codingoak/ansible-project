@@ -243,58 +243,47 @@
       tags: [banner]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 06: SSH HARDENING
+    #  BLOCK 06: SSH COMPLETE HARDENING
     # ═══════════════════════════════════════════════════
 
-    - name: "[06] SSH - Disable root login"
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PermitRootLogin'
-        line: 'PermitRootLogin no'
+    - name: "[06] SSH – Deploy complete hardened configuration"
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-hardening.conf
         backup: yes
-      notify: restart sshd
-      tags: [ssh]
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          # -- Access control --
+          PermitRootLogin no
+          PasswordAuthentication no
+          PermitEmptyPasswords no
+          PubkeyAuthentication yes
 
-    - name: "[06] SSH - Disable password authentication"
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PasswordAuthentication'
-        line: 'PasswordAuthentication no'
-      notify: restart sshd
-      tags: [ssh]
+          # -- Timeouts --
+          ClientAliveInterval {{ ssh_idle_timeout }}
+          ClientAliveCountMax {{ ssh_alive_count_max }}
+          LoginGraceTime {{ ssh_login_grace_time }}
 
-    - name: "[06] SSH - Set idle timeout"
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?ClientAliveInterval'
-        line: "ClientAliveInterval {{ ssh_idle_timeout }}"
-      notify: restart sshd
-      tags: [ssh]
+          # -- Limits --
+          MaxAuthTries {{ ssh_max_auth_tries }}
+          MaxSessions {{ ssh_max_sessions }}
+          MaxStartups {{ ssh_max_startups }}
 
-    - name: "[06] SSH - Set max authentication attempts"
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?MaxAuthTries'
-        line: "MaxAuthTries {{ ssh_max_auth_tries }}"
-      notify: restart sshd
-      tags: [ssh]
+          # -- Security options --
+          HostbasedAuthentication no
+          DisableForwarding yes
+          GSSAPIAuthentication no
+          IgnoreRhosts yes
+          PermitUserEnvironment no
+          X11Forwarding no
+          UsePAM yes
 
-    - name: "[06] SSH - Disallow empty passwords"
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PermitEmptyPasswords'
-        line: 'PermitEmptyPasswords no'
-      notify: restart sshd
-      tags: [ssh]
+          # -- Logging --
+          LogLevel VERBOSE
 
-    - name: "[06] SSH - Allow secure algorithms only"
-      ansible.builtin.blockinfile:
-        path: /etc/ssh/sshd_config
-        marker: "# {mark} ANSIBLE MANAGED - Crypto settings"
-        block: |
-          KexAlgorithms curve25519-sha256,diffie-hellman-group14-sha256
-          Ciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com
-          MACs hmac-sha2-256,hmac-sha2-512
+          # -- Banner --
+          Banner /etc/issue.net
       notify: restart sshd
       tags: [ssh]
 

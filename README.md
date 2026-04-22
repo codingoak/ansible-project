@@ -89,7 +89,7 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `selinux` | `hardening.yml` | Enforce SELinux |
 | `crypto` | `hardening.yml` | CIS crypto policy module |
 | `banner` | `hardening.yml` | Login banners (/etc/issue, /etc/issue.net, MOTD) |
-| `ssh` | `hardening.yml` | Harden SSH configuration |
+| `ssh` | `hardening.yml` | Complete SSH hardening (15+ directives) |
 | `sudo` | `hardening.yml` | Sudo use_pty and logfile |
 | `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
 | `audit` | `hardening.yml` | Enable audit logging |
@@ -218,26 +218,52 @@ All files are set to `root:root` ownership with mode `0644`. The banner text is 
 
 ---
 
-#### Block 06 – Harden SSH
+#### Block 06 – Complete SSH hardening
+Deploys a single drop-in configuration file at `/etc/ssh/sshd_config.d/99-hardening.conf` containing all CIS-required SSH directives. This replaces the previous approach of modifying `sshd_config` line by line, which is cleaner and avoids conflicts with future OS updates.
+
+**Access control:**
 
 | Setting | Value | Reason |
 |---|---|---|
 | `PermitRootLogin` | `no` | Prevents direct root access via SSH |
 | `PasswordAuthentication` | `no` | Forces SSH key-based authentication |
-| `ClientAliveInterval` | `300` | Disconnects idle sessions after 5 minutes |
-| `MaxAuthTries` | `3` | Limits brute-force attempts |
 | `PermitEmptyPasswords` | `no` | Prevents login with empty passwords |
+| `PubkeyAuthentication` | `yes` | Explicitly enables key-based auth |
 
-Additionally enforces secure cryptographic algorithms:
+**Timeouts and limits:**
 
-| Type | Allowed algorithms |
-|---|---|
-| Key exchange | `curve25519-sha256`, `diffie-hellman-group14-sha256` |
-| Ciphers | `aes256-gcm@openssh.com`, `chacha20-poly1305@openssh.com` |
-| MACs | `hmac-sha2-256`, `hmac-sha2-512` |
+| Setting | Value | Reason |
+|---|---|---|
+| `ClientAliveInterval` | `300` | Idle timeout in seconds |
+| `ClientAliveCountMax` | `3` | Missed keepalives before disconnect |
+| `LoginGraceTime` | `60` | Max seconds to authenticate |
+| `MaxAuthTries` | `3` | Limits brute-force attempts |
+| `MaxSessions` | `10` | Max concurrent sessions per connection |
+| `MaxStartups` | `10:30:60` | Rate-limit unauthenticated connections |
 
-> **Note:** A handler restarts `sshd` automatically after any change to the SSH
-> configuration, but only once at the end of the play – not after every single task.
+**Security options:**
+
+| Setting | Value | Reason |
+|---|---|---|
+| `HostbasedAuthentication` | `no` | Prevents trust based on hostname |
+| `DisableForwarding` | `yes` | Blocks all forwarding (port, X11, agent, tunnel) |
+| `GSSAPIAuthentication` | `no` | Disables Kerberos (not needed) |
+| `IgnoreRhosts` | `yes` | Ignores legacy .rhosts files |
+| `PermitUserEnvironment` | `no` | Prevents users from setting env vars via SSH |
+| `X11Forwarding` | `no` | No GUI forwarding needed on a server |
+| `UsePAM` | `yes` | Enables PAM for account/session management |
+
+**Logging and banner:**
+
+| Setting | Value | Reason |
+|---|---|---|
+| `LogLevel` | `VERBOSE` | Detailed logging for audit trail |
+| `Banner` | `/etc/issue.net` | Warning banner before authentication |
+
+> **Note:** The drop-in file at `sshd_config.d/99-hardening.conf` overrides
+> defaults from the main `sshd_config`. A handler restarts `sshd` only once
+> at the end of the play. **Always keep a second SSH session open** when
+> applying SSH changes to avoid locking yourself out.
 
 ---
 
