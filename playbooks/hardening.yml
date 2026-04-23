@@ -594,23 +594,99 @@
       tags: [firewall]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 13: AUDIT LOGGING
+    #  BLOCK 13: BLACKLIST KERNEL MODULES
     # ═══════════════════════════════════════════════════
 
-    - name: "[13] Install auditd"
+    - name: "[13] Blacklist kernel modules and redirect to /bin/false"
+      ansible.builtin.copy:
+        dest: "/etc/modprobe.d/cis-{{ item }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # CIS: {{ item }} disabled
+          install {{ item }} /bin/false
+          blacklist {{ item }}
+      loop: "{{ kernel_module_blacklist }}"
+      tags: [kernelmodules]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 14: SYSCTL – COMPLETE NETWORK HARDENING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[14] Apply complete kernel and network hardening via sysctl"
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        # -- IPv4 forwarding --
+        - { name: 'net.ipv4.ip_forward',                           value: '{{ kernel_ip_forward }}' }
+
+        # -- IPv4 redirects --
+        - { name: 'net.ipv4.conf.all.accept_redirects',            value: '0' }
+        - { name: 'net.ipv4.conf.default.accept_redirects',        value: '0' }
+        - { name: 'net.ipv4.conf.all.secure_redirects',            value: '0' }
+        - { name: 'net.ipv4.conf.default.secure_redirects',        value: '0' }
+        - { name: 'net.ipv4.conf.all.send_redirects',              value: '0' }
+        - { name: 'net.ipv4.conf.default.send_redirects',          value: '0' }
+
+        # -- IPv4 source routing --
+        - { name: 'net.ipv4.conf.all.accept_source_route',         value: '0' }
+        - { name: 'net.ipv4.conf.default.accept_source_route',     value: '0' }
+
+        # -- IPv4 reverse path filtering --
+        - { name: 'net.ipv4.conf.all.rp_filter',                   value: '1' }
+        - { name: 'net.ipv4.conf.default.rp_filter',               value: '1' }
+
+        # -- IPv4 martian logging --
+        - { name: 'net.ipv4.conf.all.log_martians',                value: '1' }
+        - { name: 'net.ipv4.conf.default.log_martians',            value: '1' }
+
+        # -- IPv4 ICMP --
+        - { name: 'net.ipv4.icmp_echo_ignore_broadcasts',          value: '1' }
+        - { name: 'net.ipv4.icmp_ignore_bogus_error_responses',    value: '1' }
+        - { name: 'net.ipv4.tcp_syncookies',                       value: '1' }
+
+        # -- IPv6 --
+        - { name: 'net.ipv6.conf.all.accept_ra',                   value: '0' }
+        - { name: 'net.ipv6.conf.default.accept_ra',               value: '0' }
+        - { name: 'net.ipv6.conf.all.accept_redirects',            value: '0' }
+        - { name: 'net.ipv6.conf.default.accept_redirects',        value: '0' }
+        - { name: 'net.ipv6.conf.all.accept_source_route',         value: '0' }
+        - { name: 'net.ipv6.conf.default.accept_source_route',     value: '0' }
+        - { name: 'net.ipv6.conf.all.forwarding',                  value: '{{ kernel_ip_forward_v6 }}' }
+        - { name: 'net.ipv6.conf.default.forwarding',              value: '{{ kernel_ip_forward_v6 }}' }
+
+        # -- Kernel protection --
+        - { name: 'kernel.randomize_va_space',                     value: '2' }
+        - { name: 'kernel.dmesg_restrict',                         value: '1' }
+        - { name: 'kernel.yama.ptrace_scope',                      value: '1' }
+        - { name: 'fs.suid_dumpable',                              value: '0' }
+        - { name: 'fs.protected_hardlinks',                        value: '1' }
+        - { name: 'fs.protected_symlinks',                         value: '1' }
+      tags: [sysctl]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 15: AUDIT LOGGING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[15] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
       tags: [audit]
 
-    - name: "[13] Enable and start auditd"
+    - name: "[15] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[13] Write audit rules"
+    - name: "[15] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -640,28 +716,10 @@
       tags: [audit]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 14: KERNEL HARDENING + SERVICES
+    #  BLOCK 16: DISABLE UNNECESSARY SERVICES
     # ═══════════════════════════════════════════════════
 
-    - name: "[14] Kernel hardening via sysctl"
-      ansible.posix.sysctl:
-        name: "{{ item.name }}"
-        value: "{{ item.value }}"
-        sysctl_set: true
-        state: present
-        reload: true
-      loop:
-        - { name: 'net.ipv4.ip_forward', value: '{{ kernel_ip_forward }}' }
-        - { name: 'net.ipv4.tcp_syncookies', value: '1' }
-        - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
-        - { name: 'net.ipv6.conf.all.accept_redirects', value: '0' }
-        - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
-        - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
-        - { name: 'kernel.randomize_va_space', value: '2' }
-        - { name: 'fs.suid_dumpable', value: '0' }
-      tags: [sysctl]
-
-    - name: "[14] Disable unnecessary services"
+    - name: "[16] Disable unnecessary services"
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: false
