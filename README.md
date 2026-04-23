@@ -93,6 +93,8 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `sudo` | `hardening.yml` | Sudo use_pty and logfile |
 | `pam` | `hardening.yml` | PAM faillock, password history, pam_pwquality |
 | `password` | `hardening.yml` | Password quality + expiry + apply to existing users |
+| `umask` | `hardening.yml` | Default umask 027, TMOUT session timeout |
+| `root` | `hardening.yml` | Single-user auth, pam_wheel, lock system accounts |
 | `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
 | `audit` | `hardening.yml` | Enable audit logging |
 | `sysctl` | `hardening.yml` | Kernel hardening |
@@ -335,7 +337,43 @@ Expanded password policy enforced via `pwquality.conf` and `login.defs`:
 
 ---
 
-#### Block 10 – Configure firewall
+#### Block 10 – Umask and session timeout
+Sets secure default file creation permissions and automatic session logout:
+
+**Umask** (set in `/etc/bashrc`, `/etc/profile`, and `/etc/login.defs`):
+
+| Value | Effect |
+|---|---|
+| `027` | New files: owner read/write, group read, others nothing. New directories: owner full, group read/execute, others nothing |
+
+**Session timeout** (deployed as `/etc/profile.d/tmout.sh`):
+
+| Setting | Value | Effect |
+|---|---|---|
+| `TMOUT` | `900` | Auto-logout after 15 minutes of inactivity |
+| `readonly` | yes | Users cannot override the timeout |
+
+**User initialization files:** All `.bashrc`, `.bash_profile`, and `.profile` files for interactive users (UID ≥ 1000) are set to mode `0740` or less.
+
+---
+
+#### Block 11 – Restrict root and authentication
+Restricts root access and hardens authentication:
+
+| Task | Effect |
+|---|---|
+| Single-user mode authentication | Requires password to enter rescue/single-user mode |
+| pam_wheel for su | Only members of the `wheel` group can use `su` |
+| Lock system accounts | Non-interactive accounts (UID < 1000) are locked with `/usr/sbin/nologin` |
+| Remove nologin from /etc/shells | Prevents nologin from being used as a valid login shell |
+| Remove nullok from pam_unix | Blocks login with empty passwords in both `system-auth` and `password-auth` |
+
+> **Note:** The pam_wheel restriction means only users in the `wheel` group
+> can `su` to root. The `ansible` user should already be in this group.
+
+---
+
+#### Block 12 – Configure firewall
 Configures firewalld with a strict inbound policy:
 - Installs firewalld if not present
 - Enables and starts the firewalld service
@@ -357,7 +395,7 @@ The `control_node_ip` variable must be set to the IP address of the machine runn
 
 ---
 
-#### Block 11 – Configure audit logging
+#### Block 13 – Configure audit logging
 Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
@@ -373,7 +411,7 @@ Sets up auditd to monitor critical system activity:
 
 ---
 
-#### Block 12 – Kernel hardening & services
+#### Block 14 – Kernel hardening & services
 
 **Kernel hardening** – enforced via `sysctl`:
 

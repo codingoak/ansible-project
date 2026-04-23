@@ -457,25 +457,117 @@
       tags: [password]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 10: FIREWALL
+    #  BLOCK 10: UMASK + SESSION TIMEOUT
+    # ═══════════════════════════════════════════════════
+
+    - name: "[10] Set umask in /etc/bashrc"
+      ansible.builtin.lineinfile:
+        path: /etc/bashrc
+        regexp: '^\s*umask\s+'
+        line: "umask {{ default_umask }}"
+      tags: [umask]
+
+    - name: "[10] Set umask in /etc/profile"
+      ansible.builtin.lineinfile:
+        path: /etc/profile
+        regexp: '^\s*umask\s+'
+        line: "umask {{ default_umask }}"
+      tags: [umask]
+
+    - name: "[10] Set UMASK in login.defs"
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^UMASK'
+        line: "UMASK           {{ default_umask }}"
+      tags: [umask]
+
+    - name: "[10] Set session timeout (TMOUT)"
+      ansible.builtin.copy:
+        dest: /etc/profile.d/tmout.sh
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # CIS: Auto-logout after inactivity
+          readonly TMOUT={{ session_timeout }}
+          export TMOUT
+      tags: [umask]
+
+    - name: "[10] Restrict user initialization file permissions"
+      ansible.builtin.shell: |
+        for dir in $(awk -F: '($3 >= 1000 && $7 != "/sbin/nologin" && $7 != "/bin/false") {print $6}' /etc/passwd); do
+          if [ -d "$dir" ]; then
+            for f in "$dir"/.bashrc "$dir"/.bash_profile "$dir"/.profile; do
+              [ -f "$f" ] && chmod 0740 "$f" || true
+            done
+          fi
+        done
+      changed_when: true
+      tags: [umask]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 11: RESTRICT ROOT / AUTH
+    # ═══════════════════════════════════════════════════
+
+    - name: "[11] Require authentication for single-user mode"
+      ansible.builtin.lineinfile:
+        path: /usr/lib/systemd/system/rescue.service
+        regexp: '^ExecStart='
+        line: 'ExecStart=-/usr/lib/systemd/systemd-sulogin-shell rescue'
+      tags: [root]
+
+    - name: "[11] Enforce pam_wheel for su"
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/su
+        regexp: '^#?\s*auth\s+required\s+pam_wheel\.so'
+        line: 'auth           required        pam_wheel.so use_uid group=wheel'
+      tags: [root]
+
+    - name: "[11] Lock non-interactive system accounts"
+      ansible.builtin.shell: |
+        for user in $(awk -F: '($3 < 1000 && $1 != "root" && $7 != "/sbin/nologin" && $7 != "/bin/false") {print $1}' /etc/passwd); do
+          usermod -L -s /usr/sbin/nologin "$user" 2>/dev/null || true
+        done
+      changed_when: true
+      tags: [root]
+
+    - name: "[11] Remove nologin from /etc/shells"
+      ansible.builtin.lineinfile:
+        path: /etc/shells
+        regexp: 'nologin'
+        state: absent
+      tags: [root]
+
+    - name: "[11] Block login with empty passwords (remove nullok from pam_unix)"
+      ansible.builtin.replace:
+        path: "{{ item }}"
+        regexp: '(\s+pam_unix\.so.*?)\s*nullok'
+        replace: '\1'
+      loop:
+        - /etc/pam.d/system-auth
+        - /etc/pam.d/password-auth
+      tags: [root]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 12: FIREWALL
     #  SSH: restricted to Control Node IP only
     #  Default zone: drop (all inbound blocked)
     # ═══════════════════════════════════════════════════
 
-    - name: "[10] Install and enable firewalld"
+    - name: "[12] Install and enable firewalld"
       ansible.builtin.dnf:
         name: firewalld
         state: present
       tags: [firewall]
 
-    - name: "[10] Start firewalld"
+    - name: "[12] Start firewalld"
       ansible.builtin.systemd:
         name: firewalld
         enabled: true
         state: started
       tags: [firewall]
 
-    - name: "[10] Set default zone to drop"
+    - name: "[12] Set default zone to drop"
       ansible.builtin.command:
         cmd: firewall-cmd --set-default-zone=drop
       register: fwzone
@@ -483,7 +575,7 @@
       failed_when: false
       tags: [firewall]
 
-    - name: "[10] Allow SSH only from Control Node"
+    - name: "[12] Allow SSH only from Control Node"
       ansible.posix.firewalld:
         zone: drop
         rich_rule: 'rule family="ipv4" source address="{{ control_node_ip }}" service name="ssh" accept'
@@ -492,7 +584,7 @@
         immediate: true
       tags: [firewall]
 
-    - name: "[10] Trust loopback traffic"
+    - name: "[12] Trust loopback traffic"
       ansible.posix.firewalld:
         zone: trusted
         interface: lo
@@ -502,23 +594,23 @@
       tags: [firewall]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 11: AUDIT LOGGING
+    #  BLOCK 13: AUDIT LOGGING
     # ═══════════════════════════════════════════════════
 
-    - name: "[11] Install auditd"
+    - name: "[13] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
       tags: [audit]
 
-    - name: "[11] Enable and start auditd"
+    - name: "[13] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[11] Write audit rules"
+    - name: "[13] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -548,10 +640,10 @@
       tags: [audit]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 12: KERNEL HARDENING + SERVICES
+    #  BLOCK 14: KERNEL HARDENING + SERVICES
     # ═══════════════════════════════════════════════════
 
-    - name: "[12] Kernel hardening via sysctl"
+    - name: "[14] Kernel hardening via sysctl"
       ansible.posix.sysctl:
         name: "{{ item.name }}"
         value: "{{ item.value }}"
@@ -569,7 +661,7 @@
         - { name: 'fs.suid_dumpable', value: '0' }
       tags: [sysctl]
 
-    - name: "[12] Disable unnecessary services"
+    - name: "[14] Disable unnecessary services"
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: false
