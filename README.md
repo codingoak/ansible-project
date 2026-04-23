@@ -96,8 +96,9 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `umask` | `hardening.yml` | Default umask 027, TMOUT session timeout |
 | `root` | `hardening.yml` | Single-user auth, pam_wheel, lock system accounts |
 | `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
+| `kernelmodules` | `hardening.yml` | Blacklist 17 kernel modules |
+| `sysctl` | `hardening.yml` | Kernel + network hardening (30 parameters) |
 | `audit` | `hardening.yml` | Enable audit logging |
-| `sysctl` | `hardening.yml` | Kernel hardening |
 | `services` | `hardening.yml` | Disable unnecessary services |
 
 ---
@@ -395,7 +396,92 @@ The `control_node_ip` variable must be set to the IP address of the machine runn
 
 ---
 
-#### Block 13 – Configure audit logging
+#### Block 13 – Blacklist kernel modules
+Disables unnecessary and potentially dangerous kernel modules by creating configuration files in `/etc/modprobe.d/`. Each module gets both a `blacklist` directive and an `install /bin/false` redirect.
+
+**Blacklisted filesystems:**
+
+| Module | Reason |
+|---|---|
+| `cramfs` | Legacy compressed filesystem |
+| `freevxfs` | Veritas filesystem, not needed |
+| `hfs`, `hfsplus` | Apple filesystems |
+| `jffs2` | Flash filesystem |
+| `overlayfs` | Container overlay, potential privilege escalation |
+| `squashfs` | Read-only compressed filesystem |
+| `udf` | Universal Disk Format |
+
+**Blacklisted storage:**
+
+| Module | Reason |
+|---|---|
+| `usb-storage` | Prevents unauthorized USB data exfiltration |
+
+**Blacklisted network protocols:**
+
+| Module | Reason |
+|---|---|
+| `atm` | Asynchronous Transfer Mode, legacy |
+| `can` | Controller Area Network, not needed on servers |
+| `dccp` | Datagram Congestion Control Protocol, rarely used |
+| `firewire-core` | IEEE 1394, potential DMA attack vector |
+| `rds` | Reliable Datagram Sockets, not needed |
+| `sctp` | Stream Control Transmission Protocol, rarely needed |
+| `tipc` | Transparent Inter-Process Communication, cluster-only |
+
+---
+
+#### Block 14 – Complete network hardening via sysctl
+Expanded from 8 to 30 kernel parameters covering all CIS-required network settings:
+
+**IPv4 hardening:**
+
+| Parameter | Value | Reason |
+|---|---|---|
+| `net.ipv4.ip_forward` | `0` | Server is not a router |
+| `net.ipv4.conf.all.accept_redirects` | `0` | Ignore ICMP redirects |
+| `net.ipv4.conf.default.accept_redirects` | `0` | Same for default interface |
+| `net.ipv4.conf.all.secure_redirects` | `0` | Ignore secure redirects |
+| `net.ipv4.conf.default.secure_redirects` | `0` | Same for default |
+| `net.ipv4.conf.all.send_redirects` | `0` | Don't send redirects |
+| `net.ipv4.conf.default.send_redirects` | `0` | Same for default |
+| `net.ipv4.conf.all.accept_source_route` | `0` | Disable source routing |
+| `net.ipv4.conf.default.accept_source_route` | `0` | Same for default |
+| `net.ipv4.conf.all.rp_filter` | `1` | Reverse path filtering |
+| `net.ipv4.conf.default.rp_filter` | `1` | Same for default |
+| `net.ipv4.conf.all.log_martians` | `1` | Log impossible addresses |
+| `net.ipv4.conf.default.log_martians` | `1` | Same for default |
+| `net.ipv4.icmp_echo_ignore_broadcasts` | `1` | Ignore broadcast pings |
+| `net.ipv4.icmp_ignore_bogus_error_responses` | `1` | Ignore bogus ICMP |
+| `net.ipv4.tcp_syncookies` | `1` | SYN flood protection |
+
+**IPv6 hardening:**
+
+| Parameter | Value | Reason |
+|---|---|---|
+| `net.ipv6.conf.all.accept_ra` | `0` | Ignore router advertisements |
+| `net.ipv6.conf.default.accept_ra` | `0` | Same for default |
+| `net.ipv6.conf.all.accept_redirects` | `0` | Ignore redirects |
+| `net.ipv6.conf.default.accept_redirects` | `0` | Same for default |
+| `net.ipv6.conf.all.accept_source_route` | `0` | Disable source routing |
+| `net.ipv6.conf.default.accept_source_route` | `0` | Same for default |
+| `net.ipv6.conf.all.forwarding` | `0` | No IPv6 forwarding |
+| `net.ipv6.conf.default.forwarding` | `0` | Same for default |
+
+**Kernel protection:**
+
+| Parameter | Value | Reason |
+|---|---|---|
+| `kernel.randomize_va_space` | `2` | Full ASLR |
+| `kernel.dmesg_restrict` | `1` | Restrict kernel log access |
+| `kernel.yama.ptrace_scope` | `1` | Restrict ptrace to child processes |
+| `fs.suid_dumpable` | `0` | No core dumps for SUID |
+| `fs.protected_hardlinks` | `1` | Prevent hardlink attacks |
+| `fs.protected_symlinks` | `1` | Prevent symlink attacks |
+
+---
+
+#### Block 15 – Configure audit logging
 Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
@@ -411,22 +497,7 @@ Sets up auditd to monitor critical system activity:
 
 ---
 
-#### Block 14 – Kernel hardening & services
-
-**Kernel hardening** – enforced via `sysctl`:
-
-| Parameter | Value | Reason |
-|---|---|---|
-| `net.ipv4.ip_forward` | `0` | Server is not a router |
-| `net.ipv4.tcp_syncookies` | `1` | SYN flood protection |
-| `net.ipv4.conf.all.accept_redirects` | `0` | Ignore ICMP redirects |
-| `net.ipv6.conf.all.accept_redirects` | `0` | Ignore IPv6 ICMP redirects |
-| `net.ipv4.conf.all.accept_source_route` | `0` | Disable source routing |
-| `net.ipv4.conf.all.rp_filter` | `1` | Enable reverse path filter |
-| `kernel.randomize_va_space` | `2` | Enable full ASLR |
-| `fs.suid_dumpable` | `0` | Restrict core dumps |
-
-**Disabled services:**
+#### Block 16 – Disable unnecessary services
 
 | Service | Reason |
 |---|---|
