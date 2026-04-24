@@ -670,23 +670,172 @@
       tags: [sysctl]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 15: AUDIT LOGGING
+    #  BLOCK 15: DISABLE CORE DUMPS
     # ═══════════════════════════════════════════════════
 
-    - name: "[15] Install auditd"
+    - name: "[15] Disable core dumps via limits.conf"
+      ansible.builtin.lineinfile:
+        path: /etc/security/limits.conf
+        regexp: '^\*.*core'
+        line: '*                hard    core            0'
+      tags: [coredump]
+
+    - name: "[15] Ensure coredump.conf.d directory exists"
+      ansible.builtin.file:
+        path: /etc/systemd/coredump.conf.d
+        state: directory
+        mode: '0755'
+      tags: [coredump]
+
+    - name: "[15] Disable core dumps via systemd-coredump"
+      ansible.builtin.copy:
+        dest: /etc/systemd/coredump.conf.d/disable.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Coredump]
+          Storage=none
+          ProcessSizeMax=0
+      tags: [coredump]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 16: MOUNT OPTIONS (/dev/shm + /home)
+    # ═══════════════════════════════════════════════════
+
+    - name: "[16] Mount /dev/shm with nodev,nosuid,noexec"
+      ansible.posix.mount:
+        path: /dev/shm
+        src: tmpfs
+        fstype: tmpfs
+        opts: "defaults,nodev,nosuid,noexec,size={{ shm_size }}"
+        state: mounted
+      tags: [mount]
+
+    - name: "[16] Remount /home with nodev,nosuid if separate partition"
+      ansible.builtin.shell: |
+        if findmnt /home > /dev/null 2>&1; then
+          mount -o remount,nodev,nosuid /home
+        fi
+      changed_when: false
+      tags: [mount]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 17: JOURNALD
+    # ═══════════════════════════════════════════════════
+
+    - name: "[17] Install systemd-journal-remote"
+      ansible.builtin.dnf:
+        name: systemd-journal-remote
+        state: present
+      tags: [journald]
+
+    - name: "[17] Create journald config drop-in directory"
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: [journald]
+
+    - name: "[17] Configure journald (compress + persistent storage)"
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/hardening.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Journal]
+          Compress=yes
+          Storage=persistent
+          ForwardToSyslog=no
+      notify: restart journald
+      tags: [journald]
+
+    - name: "[17] Disable journal-remote socket"
+      ansible.builtin.systemd:
+        name: systemd-journal-remote.socket
+        enabled: false
+        state: stopped
+      failed_when: false
+      tags: [journald]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 18: CRON / AT HARDENING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[18] Create cron.allow (root only)"
+      ansible.builtin.copy:
+        dest: /etc/cron.allow
+        content: "root\n"
+        owner: root
+        group: root
+        mode: '0600'
+      tags: [cron]
+
+    - name: "[18] Create at.allow (root only)"
+      ansible.builtin.copy:
+        dest: /etc/at.allow
+        content: "root\n"
+        owner: root
+        group: root
+        mode: '0600'
+      tags: [cron]
+
+    - name: "[18] Remove cron.deny"
+      ansible.builtin.file:
+        path: /etc/cron.deny
+        state: absent
+      tags: [cron]
+
+    - name: "[18] Remove at.deny"
+      ansible.builtin.file:
+        path: /etc/at.deny
+        state: absent
+      tags: [cron]
+
+    - name: "[18] Set cron directories to mode 0700"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: '0700'
+        owner: root
+        group: root
+      loop:
+        - /etc/cron.d
+        - /etc/cron.daily
+        - /etc/cron.hourly
+        - /etc/cron.weekly
+        - /etc/cron.monthly
+      failed_when: false
+      tags: [cron]
+
+    - name: "[18] Set crontab to mode 0600"
+      ansible.builtin.file:
+        path: /etc/crontab
+        mode: '0600'
+        owner: root
+        group: root
+      tags: [cron]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 19: AUDIT LOGGING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[19] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
       tags: [audit]
 
-    - name: "[15] Enable and start auditd"
+    - name: "[19] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[15] Write audit rules"
+    - name: "[19] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -716,10 +865,10 @@
       tags: [audit]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 16: DISABLE UNNECESSARY SERVICES
+    #  BLOCK 20: DISABLE UNNECESSARY SERVICES
     # ═══════════════════════════════════════════════════
 
-    - name: "[16] Disable unnecessary services"
+    - name: "[20] Disable unnecessary services"
       ansible.builtin.systemd:
         name: "{{ item }}"
         enabled: false
@@ -742,3 +891,8 @@
 
     - name: apply crypto policy
       ansible.builtin.command: update-crypto-policies --set DEFAULT:CIS
+
+    - name: restart journald
+      ansible.builtin.systemd:
+        name: systemd-journald
+        state: restarted
