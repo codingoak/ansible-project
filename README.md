@@ -98,6 +98,10 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `firewall` | `hardening.yml` | Configure firewalld (default: drop) |
 | `kernelmodules` | `hardening.yml` | Blacklist 17 kernel modules |
 | `sysctl` | `hardening.yml` | Kernel + network hardening (30 parameters) |
+| `coredump` | `hardening.yml` | Disable core dumps |
+| `mount` | `hardening.yml` | Secure mount options (/dev/shm, /home) |
+| `journald` | `hardening.yml` | Journald compression + persistent storage |
+| `cron` | `hardening.yml` | Restrict cron/at access |
 | `audit` | `hardening.yml` | Enable audit logging |
 | `services` | `hardening.yml` | Disable unnecessary services |
 
@@ -481,7 +485,74 @@ Expanded from 8 to 30 kernel parameters covering all CIS-required network settin
 
 ---
 
-#### Block 15 – Configure audit logging
+#### Block 15 – Disable core dumps
+Prevents sensitive data from being written to disk via core dumps:
+
+| Method | Configuration | Effect |
+|---|---|---|
+| `limits.conf` | `* hard core 0` | No core dumps for any user |
+| `systemd-coredump` | `Storage=none`, `ProcessSizeMax=0` | systemd won't store or process dumps |
+
+Core dumps can contain passwords, encryption keys, and other sensitive data from process memory. Disabling them is a CIS requirement.
+
+---
+
+#### Block 16 – Secure mount options
+Restricts what can be done on mounted filesystems:
+
+**`/dev/shm`** (shared memory):
+
+| Option | Effect |
+|---|---|
+| `nodev` | No device files allowed |
+| `nosuid` | No SUID binaries |
+| `noexec` | No execution of binaries |
+| `size` | Limited to `shm_size` (default: 512m) |
+
+**`/home`** (if separate partition):
+
+| Option | Effect |
+|---|---|
+| `nodev` | No device files allowed |
+| `nosuid` | No SUID binaries |
+
+> **Note:** `/home` mount options are only applied if `/home` is a separate
+> partition. The task checks with `findmnt` before attempting the remount.
+
+---
+
+#### Block 17 – Journald configuration
+Configures systemd-journald for secure log storage:
+
+| Setting | Value | Effect |
+|---|---|---|
+| `Compress` | `yes` | Compress large log files to save space |
+| `Storage` | `persistent` | Write logs to `/var/log/journal/` (survives reboot) |
+| `ForwardToSyslog` | `no` | Avoid duplicate logs (CIS requirement) |
+
+Additional tasks:
+- Installs `systemd-journal-remote` package (CIS requirement)
+- Disables `systemd-journal-remote.socket` (no remote log reception)
+
+---
+
+#### Block 18 – Cron and at hardening
+Restricts scheduled task execution to root only:
+
+| Task | Effect |
+|---|---|
+| Create `/etc/cron.allow` | Only listed users (root) can use cron |
+| Create `/etc/at.allow` | Only listed users (root) can use at |
+| Remove `/etc/cron.deny` | Deny-based access control replaced by allow-based |
+| Remove `/etc/at.deny` | Same for at |
+| Cron directories mode `0700` | Only root can read cron job directories |
+| Crontab mode `0600` | Only root can read the main crontab |
+
+The allow-based model is more secure than deny-based: if `cron.allow` exists, only users listed in it can create cron jobs, regardless of `cron.deny`.
+
+---
+
+#### Block 19 – Configure audit logging
 Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
@@ -497,7 +568,7 @@ Sets up auditd to monitor critical system activity:
 
 ---
 
-#### Block 16 – Disable unnecessary services
+#### Block 20 – Disable unnecessary services
 
 | Service | Reason |
 |---|---|
