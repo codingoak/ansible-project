@@ -102,8 +102,9 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `mount` | `hardening.yml` | Secure mount options (/dev/shm, /home) |
 | `journald` | `hardening.yml` | Journald compression + persistent storage |
 | `cron` | `hardening.yml` | Restrict cron/at access |
+| `services` | `hardening.yml` | Disable unnecessary services (incl. cockpit) |
+| `aide` | `hardening.yml` | AIDE file integrity monitoring |
 | `audit` | `hardening.yml` | Enable audit logging |
-| `services` | `hardening.yml` | Disable unnecessary services |
 
 ---
 
@@ -552,7 +553,41 @@ The allow-based model is more secure than deny-based: if `cron.allow` exists, on
 
 ---
 
-#### Block 19 – Configure audit logging
+#### Block 19 – Disable unnecessary services
+
+| Service | Reason |
+|---|---|
+| `bluetooth` | Not needed on a server |
+| `avahi-daemon` | mDNS/DNS-SD not needed on a server |
+| `cups` | Printing service not needed on a server |
+| `cockpit.socket` | Web-based management console, potential attack surface |
+| `cockpit` | Cockpit service itself |
+
+> **Note:** Service disable tasks use `failed_when: false` – if a service
+> is not installed the task is skipped silently without failing the playbook.
+
+---
+
+#### Block 20 – AIDE file integrity monitoring
+Installs and configures AIDE (Advanced Intrusion Detection Environment) to detect unauthorized changes to system files:
+
+| Task | Effect |
+|---|---|
+| Install AIDE | `dnf install aide` |
+| Configure audit tool verification | Monitors integrity of auditctl, auditd, ausearch, aureport, autrace, augenrules |
+| Initialize database | `aide --init` creates baseline snapshot (~2 min) |
+| Activate database | Copies `aide.db.new.gz` → `aide.db.gz` |
+| Schedule daily check | Cron job at `aide_cron_hour`:`aide_cron_minute` (default: 04:05) |
+
+AIDE compares the current state of monitored files against the baseline database. Any modification to permissions, ownership, size, or content is flagged. The audit tools are explicitly monitored to detect tampering with the audit system itself.
+
+> **Note:** After significant system changes (package updates, configuration changes),
+> re-initialize the AIDE database with `aide --init` and activate the new baseline.
+> Otherwise, AIDE will report all changes as potential intrusions.
+
+---
+
+#### Block 21 – Configure audit logging
 Sets up auditd to monitor critical system activity:
 - Installs and enables the `auditd` service
 - Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
@@ -565,19 +600,6 @@ Sets up auditd to monitor critical system activity:
 | `sshd` | `/etc/ssh/sshd_config` | Write, attribute change |
 | `exec_root` | All commands executed as root via sudo | Always |
 | `network` | `/etc/hosts`, `/etc/sysconfig/network` | Write, attribute change |
-
----
-
-#### Block 20 – Disable unnecessary services
-
-| Service | Reason |
-|---|---|
-| `bluetooth` | Not needed on a server |
-| `avahi-daemon` | mDNS/DNS-SD not needed on a server |
-| `cups` | Printing service not needed on a server |
-
-> **Note:** Service disable tasks use `failed_when: false` – if a service
-> is not installed the task is skipped silently without failing the playbook.
 
 ---
 

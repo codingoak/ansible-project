@@ -90,6 +90,8 @@
       - bluetooth
       - avahi-daemon
       - cups
+      - cockpit.socket
+      - cockpit
 
     # ── Kernel modules to blacklist ───────────────────
     kernel_module_blacklist:
@@ -819,23 +821,82 @@
       tags: [cron]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 19: AUDIT LOGGING
+    #  BLOCK 19: DISABLE UNNECESSARY SERVICES
     # ═══════════════════════════════════════════════════
 
-    - name: "[19] Install auditd"
+    - name: "[19] Disable unnecessary services"
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: "{{ services_to_disable }}"
+      failed_when: false
+      tags: [services]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 20: AIDE – FILE INTEGRITY MONITORING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[20] Install AIDE"
+      ansible.builtin.dnf:
+        name: aide
+        state: present
+      tags: [aide]
+
+    - name: "[20] Configure AIDE to verify audit tools"
+      ansible.builtin.lineinfile:
+        path: /etc/aide.conf
+        line: "{{ item }}"
+        insertafter: EOF
+      loop:
+        - '/usr/sbin/auditctl p+i+n+u+g+s+b+acl+xattrs+sha512'
+        - '/usr/sbin/auditd p+i+n+u+g+s+b+acl+xattrs+sha512'
+        - '/usr/sbin/ausearch p+i+n+u+g+s+b+acl+xattrs+sha512'
+        - '/usr/sbin/aureport p+i+n+u+g+s+b+acl+xattrs+sha512'
+        - '/usr/sbin/autrace p+i+n+u+g+s+b+acl+xattrs+sha512'
+        - '/usr/sbin/augenrules p+i+n+u+g+s+b+acl+xattrs+sha512'
+      tags: [aide]
+
+    - name: "[20] Initialize AIDE database (takes ~2 min)"
+      ansible.builtin.command:
+        cmd: aide --init
+        creates: /var/lib/aide/aide.db.new.gz
+      tags: [aide]
+
+    - name: "[20] Activate AIDE database"
+      ansible.builtin.copy:
+        src: /var/lib/aide/aide.db.new.gz
+        dest: /var/lib/aide/aide.db.gz
+        remote_src: yes
+      tags: [aide]
+
+    - name: "[20] Schedule daily AIDE check via cron"
+      ansible.builtin.cron:
+        name: "AIDE daily integrity check"
+        minute: "{{ aide_cron_minute }}"
+        hour: "{{ aide_cron_hour }}"
+        job: "/usr/sbin/aide --check"
+        user: root
+      tags: [aide]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 21: AUDIT LOGGING
+    # ═══════════════════════════════════════════════════
+
+    - name: "[21] Install auditd"
       ansible.builtin.dnf:
         name: audit
         state: present
       tags: [audit]
 
-    - name: "[19] Enable and start auditd"
+    - name: "[21] Enable and start auditd"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[19] Write audit rules"
+    - name: "[21] Write audit rules"
       ansible.builtin.copy:
         dest: /etc/audit/rules.d/hardening.rules
         backup: yes
@@ -863,19 +924,6 @@
           -w /etc/sysconfig/network -p wa -k network
       notify: reload audit rules
       tags: [audit]
-
-    # ═══════════════════════════════════════════════════
-    #  BLOCK 20: DISABLE UNNECESSARY SERVICES
-    # ═══════════════════════════════════════════════════
-
-    - name: "[20] Disable unnecessary services"
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        enabled: false
-        state: stopped
-      loop: "{{ services_to_disable }}"
-      failed_when: false
-      tags: [services]
 
   ###############################################################
   # HANDLERS
