@@ -880,50 +880,223 @@
       tags: [aide]
 
     # ═══════════════════════════════════════════════════
-    #  BLOCK 21: AUDIT LOGGING
+    #  BLOCK 21: AUDITD – COMPLETE CIS L2 RULES
     # ═══════════════════════════════════════════════════
 
     - name: "[21] Install auditd"
       ansible.builtin.dnf:
-        name: audit
+        name:
+          - audit
+          - audit-libs
         state: present
       tags: [audit]
 
-    - name: "[21] Enable and start auditd"
+    - name: "[21] Enable auditd service"
       ansible.builtin.systemd:
         name: auditd
         enabled: true
         state: started
       tags: [audit]
 
-    - name: "[21] Write audit rules"
-      ansible.builtin.copy:
-        dest: /etc/audit/rules.d/hardening.rules
+    - name: "[21] Configure auditd data retention"
+      ansible.builtin.lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
         backup: yes
+      loop:
+        - { regexp: '^max_log_file_action',      line: 'max_log_file_action = keep_logs' }
+        - { regexp: '^space_left_action',        line: 'space_left_action = email' }
+        - { regexp: '^admin_space_left_action',  line: 'admin_space_left_action = halt' }
+        - { regexp: '^disk_full_action',         line: 'disk_full_action = halt' }
+        - { regexp: '^disk_error_action',        line: 'disk_error_action = halt' }
+      tags: [audit]
+
+    - name: "[21] Set audit config file permissions to 0640"
+      ansible.builtin.shell: |
+        find /etc/audit/ -name '*.conf' -o -name '*.rules' | xargs chmod 0640
+      changed_when: true
+      tags: [audit]
+
+    # RHEL 10 uses BLS (Boot Loader Specification) — grubby writes
+    # directly to /boot/loader/entries/, grub2-mkconfig alone won't work.
+    - name: "[21] Check current kernel boot args"
+      ansible.builtin.shell:
+        cmd: "grubby --info=DEFAULT | grep args"
+      register: grubby_check
+      changed_when: false
+      tags: [audit]
+
+    - name: "[21] Enable audit at boot via grubby (audit=1)"
+      ansible.builtin.command:
+        cmd: grubby --update-kernel=ALL --args='audit=1'
+      when: "'audit=1' not in grubby_check.stdout"
+      tags: [audit]
+
+    - name: "[21] Enable audit backlog limit via grubby"
+      ansible.builtin.command:
+        cmd: "grubby --update-kernel=ALL --args='audit_backlog_limit={{ audit_backlog_limit }}'"
+      when: "'audit_backlog_limit' not in grubby_check.stdout"
+      tags: [audit]
+
+    - name: "[21] Deploy CIS L2 audit rules"
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/99-cis-hardening.rules
+        backup: yes
+        owner: root
+        group: root
+        mode: '0640'
         content: |
-          # Monitor identity files
+          ## ============================================================
+          ## CIS RHEL 10 L2 – Complete Audit Rules
+          ## ============================================================
+
+          ## Clear existing rules
+          -D
+
+          ## Increase buffer size
+          -b {{ audit_buffer_size }}
+
+          ## Continue on errors
+          -c
+
+          ## -- Time changes --
+          -a always,exit -F arch=b64 -S adjtimex -S settimeofday -S clock_settime -k time-change
+          -a always,exit -F arch=b32 -S adjtimex -S settimeofday -S stime -S clock_settime -k time-change
+          -w /etc/localtime -p wa -k time-change
+
+          ## -- Identity / user management --
           -w /etc/passwd -p wa -k identity
           -w /etc/shadow -p wa -k identity
           -w /etc/group -p wa -k identity
           -w /etc/gshadow -p wa -k identity
-          -w /etc/sudoers -p wa -k sudo
-          -w /etc/sudoers.d/ -p wa -k sudo
+          -w /etc/security/opasswd -p wa -k identity
+          -w /etc/nsswitch.conf -p wa -k identity
+          -w /etc/pam.conf -p wa -k identity
+          -w /etc/pam.d/ -p wa -k identity
 
-          # Login activity
+          ## -- Network configuration --
+          -a always,exit -F arch=b64 -S sethostname -S setdomainname -k system-locale
+          -a always,exit -F arch=b32 -S sethostname -S setdomainname -k system-locale
+          -w /etc/hostname -p wa -k system-locale
+          -w /etc/hosts -p wa -k system-locale
+          -w /etc/issue -p wa -k system-locale
+          -w /etc/issue.net -p wa -k system-locale
+          -w /etc/sysconfig/network -p wa -k system-locale
+          -w /etc/NetworkManager/ -p wa -k system-locale
+          -w /etc/NetworkManager/system-connections/ -p wa -k system-locale
+
+          ## -- SELinux / MAC policy --
+          -w /etc/selinux/ -p wa -k MAC-policy
+          -w /usr/share/selinux/ -p wa -k MAC-policy
+
+          ## -- Login / logout events --
           -w /var/log/lastlog -p wa -k logins
           -w /var/run/faillock/ -p wa -k logins
 
-          # SSH configuration
+          ## -- Session initiation --
+          -w /var/run/utmp -p wa -k session
+          -w /var/log/wtmp -p wa -k logins
+          -w /var/log/btmp -p wa -k logins
+
+          ## -- DAC / permission changes (chmod, chown, xattr) --
+          -a always,exit -F arch=b64 -S chmod -S fchmod -S fchmodat -S fchmodat2 -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b32 -S chmod -S fchmod -S fchmodat -S fchmodat2 -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b64 -S chown -S fchown -S fchownat -S lchown -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b32 -S chown -S fchown -S fchownat -S lchown -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b64 -S setxattr -S lsetxattr -S fsetxattr -S removexattr -S lremovexattr -S fremovexattr -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b32 -S setxattr -S lsetxattr -S fsetxattr -S removexattr -S lremovexattr -S fremovexattr -F auid>=1000 -F auid!=unset -k perm_mod
+
+          ## -- File deletion events --
+          -a always,exit -F arch=b64 -S unlink -S unlinkat -S rename -S renameat -S renameat2 -F auid>=1000 -F auid!=unset -k delete
+          -a always,exit -F arch=b32 -S unlink -S unlinkat -S rename -S renameat -S renameat2 -F auid>=1000 -F auid!=unset -k delete
+
+          ## -- Unauthorized file access attempts --
+          -a always,exit -F arch=b64 -S creat -S open -S openat -S truncate -S ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b64 -S creat -S open -S openat -S truncate -S ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b32 -S creat -S open -S openat -S truncate -S ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b32 -S creat -S open -S openat -S truncate -S ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+
+          ## -- Kernel module loading/unloading --
+          -a always,exit -F arch=b64 -S init_module -S finit_module -S delete_module -S query_module -F auid>=1000 -F auid!=unset -k module_chg
+          -a always,exit -F arch=b32 -S init_module -S finit_module -S delete_module -S query_module -F auid>=1000 -F auid!=unset -k module_chg
+
+          ## -- Mount / export to media --
+          -a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -k mounts
+          -a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -k mounts
+
+          ## -- ACL commands --
+          -a always,exit -F path=/usr/bin/chacl -F perm=x -F auid>=1000 -F auid!=unset -k priv-cmd
+          -a always,exit -F path=/usr/bin/setfacl -F perm=x -F auid>=1000 -F auid!=unset -k priv-cmd
+
+          ## -- SELinux commands --
+          -a always,exit -F path=/usr/bin/chcon -F perm=x -F auid>=1000 -F auid!=unset -k priv-cmd
+
+          ## -- User management commands --
+          -a always,exit -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=unset -k usermod
+          -a always,exit -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=unset -k module_chg
+
+          ## -- Sudo / admin activity --
+          -w /etc/sudoers -p wa -k actions
+          -w /etc/sudoers.d/ -p wa -k actions
+          -w /var/log/sudo.log -p wa -k actions
+
+          ## -- SSH configuration --
           -w /etc/ssh/sshd_config -p wa -k sshd
+          -w /etc/ssh/sshd_config.d/ -p wa -k sshd
 
-          # All root executions via sudo
-          -a always,exit -F arch=b64 -S execve -F euid=0 -k exec_root
+          ## -- Privileged execution as another user --
+          -a always,exit -F arch=b64 -C euid!=uid -F auid!=unset -S execve -k user_emulation
+          -a always,exit -F arch=b32 -C euid!=uid -F auid!=unset -S execve -k user_emulation
 
-          # Network configuration
-          -w /etc/hosts -p wa -k network
-          -w /etc/sysconfig/network -p wa -k network
+          ## -- Maintenance / cron --
+          -w /var/spool/cron/ -p wa -k maintenance
+          -w /etc/crontab -p wa -k maintenance
+          -w /etc/cron.d/ -p wa -k maintenance
+
+          ## -- Make audit config immutable (MUST BE LAST RULE!) --
+          -e 2
       notify: reload audit rules
       tags: [audit]
+
+    - name: "[21] Generate audit rules for all privileged (SUID/SGID) binaries"
+      ansible.builtin.shell: |
+        # Paths already covered in 99-cis-hardening.rules
+        SKIP="/usr/bin/chacl|/usr/bin/setfacl|/usr/bin/chcon|/usr/sbin/usermod|/usr/bin/kmod"
+        find / -xdev \( -perm -4000 -o -perm -2000 \) -type f 2>/dev/null | \
+        grep -Ev "$SKIP" | \
+        while read -r f; do
+          echo "-a always,exit -F path=$f -F perm=x -F auid>=1000 -F auid!=unset -k privileged"
+        done > /etc/audit/rules.d/50-privileged.rules
+        chmod 0640 /etc/audit/rules.d/50-privileged.rules
+      changed_when: true
+      notify: reload audit rules
+      tags: [audit]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 22: GRUB PASSWORD (manual step)
+    # ═══════════════════════════════════════════════════
+
+    # GRUB password must be set interactively:
+    #   grub2-setpassword
+    # Cannot be safely automated (password would be in plaintext)
+    - name: "[22] GRUB – Password reminder"
+      ansible.builtin.debug:
+        msg: >
+          GRUB boot password must be set MANUALLY on the managed node!
+          Run: grub2-setpassword
+          This prevents unauthorized boot or single-user mode access.
+      tags: [grub]
+
+    # ═══════════════════════════════════════════════════
+    #  BLOCK 23: FILE OWNERSHIP CLEANUP
+    # ═══════════════════════════════════════════════════
+
+    - name: "[23] Assign root group to files without a valid group owner"
+      ansible.builtin.shell: |
+        find / -xdev -nogroup -exec chgrp root {} \; 2>/dev/null || true
+      changed_when: false
+      tags: [fileperms]
 
   ###############################################################
   # HANDLERS
@@ -936,6 +1109,10 @@
 
     - name: reload audit rules
       ansible.builtin.command: augenrules --load
+      register: audit_load
+      failed_when: >
+        audit_load.rc != 0 and
+        'Rule exists' not in (audit_load.stderr | default(''))
 
     - name: apply crypto policy
       ansible.builtin.command: update-crypto-policies --set DEFAULT:CIS

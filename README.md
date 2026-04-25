@@ -104,7 +104,9 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `cron` | `hardening.yml` | Restrict cron/at access |
 | `services` | `hardening.yml` | Disable unnecessary services (incl. cockpit) |
 | `aide` | `hardening.yml` | AIDE file integrity monitoring |
-| `audit` | `hardening.yml` | Enable audit logging |
+| `audit` | `hardening.yml` | Complete CIS L2 audit rules (~70 rules) |
+| `grub` | `hardening.yml` | GRUB password reminder (manual step) |
+| `fileperms` | `hardening.yml` | Fix unowned files |
 
 ---
 
@@ -587,19 +589,70 @@ AIDE compares the current state of monitored files against the baseline database
 
 ---
 
-#### Block 21 – Configure audit logging
-Sets up auditd to monitor critical system activity:
-- Installs and enables the `auditd` service
-- Writes custom audit rules to `/etc/audit/rules.d/hardening.rules`
+#### Block 21 – Complete CIS L2 audit rules
+Replaces the basic audit rules with a comprehensive CIS L2 ruleset covering all required syscall and file monitoring. Includes audit data retention configuration and boot-time audit parameters.
 
-| Key `-k` | Monitored paths | Events |
+**Data retention** (`/etc/audit/auditd.conf`):
+
+| Setting | Value | Effect |
 |---|---|---|
-| `identity` | `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` | Write, attribute change |
-| `sudo` | `/etc/sudoers`, `/etc/sudoers.d/` | Write, attribute change |
-| `logins` | `/var/log/lastlog`, `/var/run/faillock/` | Write, attribute change |
-| `sshd` | `/etc/ssh/sshd_config` | Write, attribute change |
-| `exec_root` | All commands executed as root via sudo | Always |
-| `network` | `/etc/hosts`, `/etc/sysconfig/network` | Write, attribute change |
+| `max_log_file_action` | `keep_logs` | Rotate but never delete old logs |
+| `space_left_action` | `email` | Alert when disk space is low |
+| `admin_space_left_action` | `halt` | Stop system if critically low |
+| `disk_full_action` | `halt` | Stop system if disk is full |
+| `disk_error_action` | `halt` | Stop system on disk errors |
+
+**Boot parameters** (set via `grubby` for RHEL 10 BLS):
+
+| Parameter | Effect |
+|---|---|
+| `audit=1` | Enable auditing before auditd starts (captures early boot events) |
+| `audit_backlog_limit=8192` | Large buffer to prevent event loss during boot |
+
+**Audit rules** (`/etc/audit/rules.d/99-cis-hardening.rules`) – ~70 rules covering:
+
+| Category | What is monitored |
+|---|---|
+| Time changes | `adjtimex`, `settimeofday`, `clock_settime`, `/etc/localtime` |
+| Identity | `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow`, `/etc/nsswitch.conf`, PAM config |
+| Network config | `sethostname`, `setdomainname`, `/etc/hosts`, `/etc/hostname`, `/etc/issue`, `/etc/NetworkManager/` |
+| SELinux/MAC | `/etc/selinux/`, `/usr/share/selinux/` |
+| Login/logout | `/var/log/lastlog`, `/var/run/faillock/` |
+| Sessions | `/var/run/utmp`, `/var/log/wtmp`, `/var/log/btmp` |
+| DAC changes | `chmod`, `fchmod`, `chown`, `fchown`, `setxattr`, `removexattr` (both arch) |
+| File deletion | `unlink`, `unlinkat`, `rename`, `renameat`, `renameat2` |
+| Unauthorized access | `creat`, `open`, `openat`, `truncate`, `ftruncate` (EACCES/EPERM) |
+| Kernel modules | `init_module`, `finit_module`, `delete_module`, `query_module` |
+| Mounts | `mount` syscall |
+| Privileged commands | `chacl`, `setfacl`, `chcon`, `usermod`, `kmod` |
+| Admin activity | `/etc/sudoers`, `/etc/sudoers.d/`, `/var/log/sudo.log` |
+| SSH config | `/etc/ssh/sshd_config`, `/etc/ssh/sshd_config.d/` |
+| User emulation | `execve` where euid != uid |
+| Maintenance | `/var/spool/cron/`, `/etc/crontab`, `/etc/cron.d/` |
+
+**Dynamic SUID/SGID detection:** A separate task scans the filesystem for all binaries with SUID or SGID bits and generates audit rules for them in `/etc/audit/rules.d/50-privileged.rules`. Paths already covered in the static rules are excluded to prevent duplicates.
+
+**Immutable audit config:** The last rule (`-e 2`) makes the audit configuration immutable at runtime. Changes require a reboot, which prevents an attacker from disabling auditing.
+
+> **Note:** The audit handler tolerates "Rule exists" warnings, which occur
+> when rules from the static and dynamic rulesets overlap. A reboot is required
+> after the first application to load all rules with the immutable flag active.
+
+---
+
+#### Block 22 – GRUB password (manual step)
+Displays a reminder that the GRUB boot password must be set manually:
+
+```bash
+sudo grub2-setpassword
+```
+
+This prevents unauthorized users from editing boot parameters or entering single-user mode at the physical console. Cannot be automated because the password would be stored in plaintext in the playbook.
+
+---
+
+#### Block 23 – File ownership cleanup
+Finds all files on the system without a valid group owner and assigns them to the `root` group. Files without a valid owner can indicate leftover artifacts from removed users or packages and may pose a security risk.
 
 ---
 
