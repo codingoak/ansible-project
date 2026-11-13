@@ -1,0 +1,11 @@
+---
+profile: production
+offline: true
+
+exclude_paths:
+  - .github/
+
+skip_list:
+  # Variable names are kept short and stable (e.g. control_node_ip),
+  # because they form the user-facing interface documented in the README.
+  - var-naming[no-role-prefix]
