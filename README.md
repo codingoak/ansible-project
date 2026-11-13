@@ -1,20 +1,34 @@
 # RHEL 10.1 CIS L2 Hardening with Ansible
 
-> **Goal:** Harden a RHEL 10.1 server to CIS Benchmark Level 2 – Server standard using a single Ansible playbook, managed via SSH keys from a dedicated control node.
+[![Lint](https://github.com/codingoak/ansible-project/actions/workflows/lint.yml/badge.svg)](https://github.com/codingoak/ansible-project/actions/workflows/lint.yml)
+
+> **Goal:** Harden a RHEL 10.1 server to CIS Benchmark Level 2 – Server standard using an Ansible role (`cis_hardening`), managed via SSH keys from a dedicated control node.
 
 ## Project Structure
 
 ```sh
 ansible-project/
 ├── ansible.cfg                  # Ansible configuration
-├── .gitignore                   # Git ignore rules
+├── .ansible-lint                # ansible-lint config (production profile)
+├── .yamllint                    # yamllint rules
+├── .github/workflows/lint.yml   # CI: syntax check + ansible-lint
+├── requirements.yml             # Required collections
 ├── inventory/
 │   ├── hosts.ini                # Managed node inventory (ignored by git)
 │   └── hosts.ini.example        # Inventory template
 ├── playbooks/
 │   ├── hello.yml                # First simple playbook
-│   └── hardening.yml            # CIS L2 hardening playbook
-└── roles/                       # Roles go here (future)
+│   └── hardening.yml            # Applies the cis_hardening role
+└── roles/
+    └── cis_hardening/
+        ├── defaults/main.yml    # All variables with CIS defaults
+        ├── handlers/main.yml    # sshd, auditd, crypto policy, journald
+        ├── meta/main.yml        # Role metadata
+        └── tasks/
+            ├── main.yml         # Imports all sections in order
+            ├── 01_update.yml    # One file per CIS section,
+            ├── ...              # named after its tag
+            └── 23_fileperms.yml
 ```
 
 ## Requirements
@@ -27,7 +41,7 @@ ansible-project/
 
 ```sh
 # Install required collections
-ansible-galaxy collection install ansible.posix
+ansible-galaxy collection install -r requirements.yml
 ```
 
 ## Setup
@@ -50,6 +64,7 @@ vim inventory/hosts.ini
 Only one value **must** be changed before running the playbook:
 
 1. Set `control_node_ip` in `playbooks/hardening.yml` to your control node's IP
+   (all other defaults live in `roles/cis_hardening/defaults/main.yml`)
 2. Set your managed node's IP in `inventory/hosts.ini`
 3. Run `ansible-playbook playbooks/hardening.yml --check --diff`
 
@@ -102,7 +117,7 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 | `mount` | `hardening.yml` | Secure mount options (/dev/shm, /home) |
 | `journald` | `hardening.yml` | Journald compression + persistent storage |
 | `cron` | `hardening.yml` | Restrict cron/at access |
-| `services` | `hardening.yml` | Disable unnecessary services (incl. cockpit) |
+| `services` | `hardening.yml` | Disable unnecessary services, mask Cockpit |
 | `aide` | `hardening.yml` | AIDE file integrity monitoring |
 | `audit` | `hardening.yml` | Complete CIS L2 audit rules (~70 rules) |
 | `grub` | `hardening.yml` | GRUB password reminder (manual step) |
@@ -112,7 +127,7 @@ ansible-playbook playbooks/hardening.yml --skip-tags ssh,firewall
 
 ## Variables Reference
 
-All playbook variables are defined in the `vars:` section, split into two groups:
+All variables are defined in `roles/cis_hardening/defaults/main.yml` and can be overridden in the playbook, `group_vars/` or `host_vars/`. They are split into two groups:
 
 **User Configuration** — adjust to your environment:
 
@@ -310,9 +325,10 @@ Selects the `sssd` profile with `faillock` and `pamaccess` features enabled. Thi
 - `pam_unix.so` configured with `remember=24` to reject the last 24 passwords
 - `pam_pwhistory.so` enabled for root with `enforce_for_root`
 
-> **Note:** The `authselect select` command resets the PAM stack on each run.
-> Subsequent tasks re-apply the custom PAM modifications. This causes some
-> tasks to show `changed` on every playbook run — this is expected behavior.
+> **Note:** `authselect select --force` resets the whole PAM stack. The playbook
+> therefore checks `authselect current` first and only re-selects the profile
+> when the profile or its features differ. The `pam_unix` password line is set
+> explicitly, so repeated runs do not add duplicate `remember=` options.
 
 ---
 
@@ -361,7 +377,7 @@ Sets secure default file creation permissions and automatic session logout:
 | `TMOUT` | `900` | Auto-logout after 15 minutes of inactivity |
 | `readonly` | yes | Users cannot override the timeout |
 
-**User initialization files:** All `.bashrc`, `.bash_profile`, and `.profile` files for interactive users (UID ≥ 1000) are set to mode `0740` or less.
+**User initialization files:** All `.bashrc`, `.bash_profile`, and `.profile` files for interactive users (UID ≥ 1000) are restricted to mode `0740` or more restrictive. Only excess permissions are removed (`g-wx,o-rwx`); stricter modes such as `0600` are left untouched.
 
 ---
 
@@ -372,7 +388,7 @@ Restricts root access and hardens authentication:
 |---|---|
 | Single-user mode authentication | Requires password to enter rescue/single-user mode |
 | pam_wheel for su | Only members of the `wheel` group can use `su` |
-| Lock system accounts | Non-interactive accounts (UID < 1000) are locked with `/usr/sbin/nologin` |
+| Lock system accounts | Non-interactive accounts (UID < 1000, except `root`, `sync`, `shutdown`, `halt` as per CIS) are locked with `/usr/sbin/nologin`; already locked accounts are skipped |
 | Remove nologin from /etc/shells | Prevents nologin from being used as a valid login shell |
 | Remove nullok from pam_unix | Blocks login with empty passwords in both `system-auth` and `password-auth` |
 
@@ -562,8 +578,8 @@ The allow-based model is more secure than deny-based: if `cron.allow` exists, on
 | `bluetooth` | Not needed on a server |
 | `avahi-daemon` | mDNS/DNS-SD not needed on a server |
 | `cups` | Printing service not needed on a server |
-| `cockpit.socket` | Web-based management console, potential attack surface |
-| `cockpit` | Cockpit service itself |
+
+**Cockpit** (web-based management console, potential attack surface) is **masked** instead of disabled: `cockpit.service` is a static, socket-activated unit, so disabling it is not possible and would report `changed` on every run. Masking `cockpit.socket` and `cockpit.service` prevents it from being started at all.
 
 > **Note:** Service disable tasks use `failed_when: false` – if a service
 > is not installed the task is skipped silently without failing the playbook.
@@ -630,7 +646,7 @@ Replaces the basic audit rules with a comprehensive CIS L2 ruleset covering all 
 | User emulation | `execve` where euid != uid |
 | Maintenance | `/var/spool/cron/`, `/etc/crontab`, `/etc/cron.d/` |
 
-**Dynamic SUID/SGID detection:** A separate task scans the filesystem for all binaries with SUID or SGID bits and generates audit rules for them in `/etc/audit/rules.d/50-privileged.rules`. Paths already covered in the static rules are excluded to prevent duplicates.
+**Dynamic SUID/SGID detection:** A separate task scans the filesystem for all binaries with SUID or SGID bits and generates audit rules for them in `/etc/audit/rules.d/50-privileged.rules`. The file is rendered via the `copy` module, so it (and the audit reload handler) only changes when the set of SUID/SGID binaries changes. Paths already covered in the static rules are excluded to prevent duplicates.
 
 **Immutable audit config:** The last rule (`-e 2`) makes the audit configuration immutable at runtime. Changes require a reboot, which prevents an attacker from disabling auditing.
 
@@ -653,6 +669,27 @@ This prevents unauthorized users from editing boot parameters or entering single
 
 #### Block 23 – File ownership cleanup
 Finds all files on the system without a valid group owner and assigns them to the `root` group. Files without a valid owner can indicate leftover artifacts from removed users or packages and may pose a security risk.
+
+---
+
+## Code Quality
+
+Every push runs a GitHub Actions workflow with a syntax check and `ansible-lint` using the **production** profile.
+
+```sh
+# Run the same checks locally
+pip install ansible-core ansible-lint
+ansible-galaxy collection install -r requirements.yml
+ansible-lint
+```
+
+Idempotency: tasks that have to use `shell` (e.g. `chage` for existing users) check the current state first and only report `changed` when something was actually modified. A second playbook run should therefore report `changed=0` (apart from `[01] Update all packages` when new updates are available).
+
+```sh
+# Verify idempotency: the second run should report changed=0
+ansible-playbook playbooks/hardening.yml
+ansible-playbook playbooks/hardening.yml
+```
 
 ---
 
