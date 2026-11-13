@@ -1,0 +1,45 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 06: SSH COMPLETE HARDENING
+# ═══════════════════════════════════════════════════
+
+- name: "[06] SSH – Deploy complete hardened configuration"
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    backup: true
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      # -- Access control --
+      PermitRootLogin no
+      PasswordAuthentication no
+      PermitEmptyPasswords no
+      PubkeyAuthentication yes
+
+      # -- Timeouts --
+      ClientAliveInterval {{ ssh_idle_timeout }}
+      ClientAliveCountMax {{ ssh_alive_count_max }}
+      LoginGraceTime {{ ssh_login_grace_time }}
+
+      # -- Limits --
+      MaxAuthTries {{ ssh_max_auth_tries }}
+      MaxSessions {{ ssh_max_sessions }}
+      MaxStartups {{ ssh_max_startups }}
+
+      # -- Security options --
+      HostbasedAuthentication no
+      DisableForwarding yes
+      GSSAPIAuthentication no
+      IgnoreRhosts yes
+      PermitUserEnvironment no
+      X11Forwarding no
+      UsePAM yes
+
+      # -- Logging --
+      LogLevel VERBOSE
+
+      # -- Banner --
+      Banner /etc/issue.net
+  notify: Restart sshd
+  tags: [ssh]

@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: cis_hardening
+  author: Daniel Eicher
+  description: Harden RHEL 10 to CIS Benchmark Level 2 - Server
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: EL
+      versions:
+        - "10"
+dependencies: []

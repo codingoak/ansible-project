@@ -1,0 +1,17 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 13: BLACKLIST KERNEL MODULES
+# ═══════════════════════════════════════════════════
+
+- name: "[13] Blacklist kernel modules and redirect to /bin/false"
+  ansible.builtin.copy:
+    dest: "/etc/modprobe.d/cis-{{ item }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # CIS: {{ item }} disabled
+      install {{ item }} /bin/false
+      blacklist {{ item }}
+  loop: "{{ kernel_module_blacklist }}"
+  tags: [kernelmodules]

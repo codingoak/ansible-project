@@ -1,0 +1,41 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 17: JOURNALD
+# ═══════════════════════════════════════════════════
+
+- name: "[17] Install systemd-journal-remote"
+  ansible.builtin.dnf:
+    name: systemd-journal-remote
+    state: present
+  tags: [journald]
+
+- name: "[17] Create journald config drop-in directory"
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags: [journald]
+
+- name: "[17] Configure journald (compress + persistent storage)"
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/hardening.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Journal]
+      Compress=yes
+      Storage=persistent
+      ForwardToSyslog=no
+  notify: Restart journald
+  tags: [journald]
+
+- name: "[17] Disable journal-remote socket"
+  ansible.builtin.systemd:
+    name: systemd-journal-remote.socket
+    enabled: false
+    state: stopped
+  failed_when: false
+  tags: [journald]

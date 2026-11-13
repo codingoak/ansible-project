@@ -1,0 +1,49 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 20: AIDE – FILE INTEGRITY MONITORING
+# ═══════════════════════════════════════════════════
+
+- name: "[20] Install AIDE"
+  ansible.builtin.dnf:
+    name: aide
+    state: present
+  tags: [aide]
+
+- name: "[20] Configure AIDE to verify audit tools"
+  ansible.builtin.lineinfile:
+    path: /etc/aide.conf
+    line: "{{ item }}"
+    insertafter: EOF
+  loop:
+    - '/usr/sbin/auditctl p+i+n+u+g+s+b+acl+xattrs+sha512'
+    - '/usr/sbin/auditd p+i+n+u+g+s+b+acl+xattrs+sha512'
+    - '/usr/sbin/ausearch p+i+n+u+g+s+b+acl+xattrs+sha512'
+    - '/usr/sbin/aureport p+i+n+u+g+s+b+acl+xattrs+sha512'
+    - '/usr/sbin/autrace p+i+n+u+g+s+b+acl+xattrs+sha512'
+    - '/usr/sbin/augenrules p+i+n+u+g+s+b+acl+xattrs+sha512'
+  tags: [aide]
+
+- name: "[20] Initialize AIDE database (takes ~2 min)"
+  ansible.builtin.command:
+    cmd: aide --init
+    creates: /var/lib/aide/aide.db.new.gz
+  tags: [aide]
+
+- name: "[20] Activate AIDE database"
+  ansible.builtin.copy:
+    src: /var/lib/aide/aide.db.new.gz
+    dest: /var/lib/aide/aide.db.gz
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  tags: [aide]
+
+- name: "[20] Schedule daily AIDE check via cron"
+  ansible.builtin.cron:
+    name: "AIDE daily integrity check"
+    minute: "{{ aide_cron_minute }}"
+    hour: "{{ aide_cron_hour }}"
+    job: "/usr/sbin/aide --check"
+    user: root
+  tags: [aide]

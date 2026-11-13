@@ -1,0 +1,55 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 10: UMASK + SESSION TIMEOUT
+# ═══════════════════════════════════════════════════
+
+- name: "[10] Set umask in /etc/bashrc"
+  ansible.builtin.lineinfile:
+    path: /etc/bashrc
+    regexp: '^\s*umask\s+'
+    line: "umask {{ default_umask }}"
+  tags: [umask]
+
+- name: "[10] Set umask in /etc/profile"
+  ansible.builtin.lineinfile:
+    path: /etc/profile
+    regexp: '^\s*umask\s+'
+    line: "umask {{ default_umask }}"
+  tags: [umask]
+
+- name: "[10] Set UMASK in login.defs"
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^UMASK'
+    line: "UMASK           {{ default_umask }}"
+  tags: [umask]
+
+- name: "[10] Set session timeout (TMOUT)"
+  ansible.builtin.copy:
+    dest: /etc/profile.d/tmout.sh
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # CIS: Auto-logout after inactivity
+      readonly TMOUT={{ session_timeout }}
+      export TMOUT
+  tags: [umask]
+
+- name: "[10] Restrict user initialization file permissions"
+  ansible.builtin.shell: |
+    for dir in $(awk -F: '($3 >= 1000 && $7 != "/sbin/nologin" && $7 != "/bin/false") {print $6}' /etc/passwd); do
+      if [ -d "$dir" ]; then
+        for f in "$dir"/.bashrc "$dir"/.bash_profile "$dir"/.profile; do
+          [ -f "$f" ] || continue
+          # Group write/execute or any "other" bit set -> too permissive
+          if [ $(( 0$(stat -c %a "$f") & 037 )) -ne 0 ]; then
+            chmod g-wx,o-rwx "$f"
+            echo "CHANGED $f"
+          fi
+        done
+      fi
+    done
+  register: init_file_perms
+  changed_when: "'CHANGED' in init_file_perms.stdout"
+  tags: [umask]

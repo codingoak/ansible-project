@@ -1,0 +1,10 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 23: FILE OWNERSHIP CLEANUP
+# ═══════════════════════════════════════════════════
+
+- name: "[23] Assign root group to files without a valid group owner"
+  ansible.builtin.shell: |
+    find / -xdev -nogroup -exec chgrp root {} \; 2>/dev/null || true
+  changed_when: false
+  tags: [fileperms]

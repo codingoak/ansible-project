@@ -1,0 +1,25 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 07: SUDO HARDENING
+# ═══════════════════════════════════════════════════
+
+- name: "[07] Sudo – Enable use_pty"
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers.d/99-hardening
+    line: 'Defaults use_pty'
+    create: true
+    owner: root
+    group: root
+    mode: '0440'
+    validate: 'visudo -cf %s'
+  tags: [sudo]
+
+- name: "[07] Sudo – Enable logfile"
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers.d/99-hardening
+    line: 'Defaults logfile="/var/log/sudo.log"'
+    owner: root
+    group: root
+    mode: '0440'
+    validate: 'visudo -cf %s'
+  tags: [sudo]

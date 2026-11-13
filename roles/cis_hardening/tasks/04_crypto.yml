@@ -1,0 +1,24 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 04: CRYPTO POLICY
+# ═══════════════════════════════════════════════════
+
+- name: "[04] Create crypto policy module directory"
+  ansible.builtin.file:
+    path: /etc/crypto-policies/policies/modules
+    state: directory
+    mode: '0755'
+  tags: [crypto]
+
+- name: "[04] Create CIS crypto policy module"
+  ansible.builtin.copy:
+    dest: /etc/crypto-policies/policies/modules/CIS.pmod
+    mode: '0644'
+    content: |
+      min_dh_size = 2048
+      min_rsa_size = 2048
+      sha1_in_certs = 0
+      ssh_certs = 0
+      ssh_etm = 0
+  notify: Apply crypto policy
+  tags: [crypto]

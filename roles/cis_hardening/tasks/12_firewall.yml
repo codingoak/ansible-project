@@ -1,0 +1,45 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 12: FIREWALL
+#  SSH: restricted to Control Node IP only
+#  Default zone: drop (all inbound blocked)
+# ═══════════════════════════════════════════════════
+
+- name: "[12] Install and enable firewalld"
+  ansible.builtin.dnf:
+    name: firewalld
+    state: present
+  tags: [firewall]
+
+- name: "[12] Start firewalld"
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  tags: [firewall]
+
+- name: "[12] Set default zone to drop"
+  ansible.builtin.command:
+    cmd: firewall-cmd --set-default-zone=drop
+  register: fwzone
+  changed_when: "'ZONE_ALREADY_SET' not in fwzone.stderr"
+  failed_when: false
+  tags: [firewall]
+
+- name: "[12] Allow SSH only from Control Node"
+  ansible.posix.firewalld:
+    zone: drop
+    rich_rule: 'rule family="ipv4" source address="{{ control_node_ip }}" service name="ssh" accept'
+    state: enabled
+    permanent: true
+    immediate: true
+  tags: [firewall]
+
+- name: "[12] Trust loopback traffic"
+  ansible.posix.firewalld:
+    zone: trusted
+    interface: lo
+    state: enabled
+    permanent: true
+    immediate: true
+  tags: [firewall]

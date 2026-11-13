@@ -1,0 +1,15 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 22: GRUB PASSWORD (manual step)
+# ═══════════════════════════════════════════════════
+
+# GRUB password must be set interactively:
+#   grub2-setpassword
+# Cannot be safely automated (password would be in plaintext)
+- name: "[22] GRUB – Password reminder"
+  ansible.builtin.debug:
+    msg: >
+      GRUB boot password must be set MANUALLY on the managed node!
+      Run: grub2-setpassword
+      This prevents unauthorized boot or single-user mode access.
+  tags: [grub]

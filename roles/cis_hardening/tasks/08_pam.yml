@@ -1,0 +1,79 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 08: PAM – FAILLOCK + PASSWORD HISTORY
+# ═══════════════════════════════════════════════════
+
+- name: "[08] Check current authselect profile"
+  ansible.builtin.command:
+    cmd: authselect current --raw  # e.g. "sssd with-faillock with-pamaccess"
+  environment:
+    LC_ALL: C  # output must not depend on the system locale
+  register: authselect_current
+  changed_when: false
+  failed_when: false
+  check_mode: false  # read-only, also needed in --check
+  tags: [pam]
+
+# Only (re)select when profile or features differ. A forced select resets
+# the whole PAM stack, which would make every run report changes.
+- name: "[08] Select authselect profile (sssd with faillock)"
+  ansible.builtin.command:
+    cmd: authselect select sssd with-faillock with-pamaccess --force
+  vars:
+    authselect_wanted: [sssd, with-faillock, with-pamaccess]
+    authselect_actual: "{{ authselect_current.stdout.split() }}"
+  when: >-
+    authselect_current.rc != 0 or
+    authselect_actual[:1] != ['sssd'] or
+    (authselect_wanted | difference(authselect_actual)) | length > 0
+  changed_when: true
+  tags: [pam]
+
+- name: "[08] Configure faillock"
+  ansible.builtin.copy:
+    dest: /etc/security/faillock.conf
+    backup: true
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # CIS: Lock account after failed login attempts
+      deny = {{ faillock_attempts }}
+      unlock_time = {{ faillock_unlock_time }}
+      even_deny_root
+      root_unlock_time = {{ faillock_unlock_time }}
+  tags: [pam]
+
+- name: "[08] Ensure pam_pwquality in system-auth"
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/system-auth
+    regexp: 'pam_pwquality\.so'
+    line: 'password    requisite     pam_pwquality.so retry=3 enforce_for_root'
+    insertbefore: 'pam_unix\.so'
+  tags: [pam]
+
+- name: "[08] Ensure pam_pwquality in password-auth"
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/password-auth
+    regexp: 'pam_pwquality\.so'
+    line: 'password    requisite     pam_pwquality.so retry=3 enforce_for_root'
+    insertbefore: 'pam_unix\.so'
+  tags: [pam]
+
+# Set the whole pam_unix password line explicitly (RHEL 10 authselect default
+# plus remember). Idempotent and also cleans up duplicates from older versions.
+- name: "[08] Set password history (pam_unix remember)"
+  ansible.builtin.lineinfile:
+    path: "/etc/pam.d/{{ item }}"
+    regexp: '^password\s+sufficient\s+pam_unix\.so'
+    line: 'password    sufficient                                   pam_unix.so yescrypt shadow use_authtok remember={{ password_remember }}'
+  loop: [system-auth, password-auth]
+  tags: [pam]
+
+- name: "[08] Enable pam_pwhistory for root"
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/system-auth
+    regexp: 'pam_pwhistory\.so'
+    line: 'password    requisite     pam_pwhistory.so remember={{ password_remember }} enforce_for_root use_authtok'
+    insertbefore: 'pam_unix\.so'
+  tags: [pam]

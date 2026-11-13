@@ -1,0 +1,31 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 05: LOGIN BANNERS
+# ═══════════════════════════════════════════════════
+
+- name: "[05] Set login banner /etc/issue"
+  ansible.builtin.copy:
+    dest: /etc/issue
+    content: "{{ login_banner }}"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [banner]
+
+- name: "[05] Set login banner /etc/issue.net"
+  ansible.builtin.copy:
+    dest: /etc/issue.net
+    content: "{{ login_banner }}"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [banner]
+
+- name: "[05] Clear MOTD (prevent OS info leak)"
+  ansible.builtin.copy:
+    dest: /etc/motd
+    content: ""
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [banner]

@@ -1,0 +1,22 @@
+---
+- name: Restart sshd
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+
+- name: Reload audit rules
+  ansible.builtin.command: augenrules --load
+  register: audit_load
+  failed_when: >
+    audit_load.rc != 0 and
+    'Rule exists' not in (audit_load.stderr | default(''))
+  changed_when: true
+
+- name: Apply crypto policy
+  ansible.builtin.command: update-crypto-policies --set DEFAULT:CIS
+  changed_when: true
+
+- name: Restart journald
+  ansible.builtin.systemd:
+    name: systemd-journald
+    state: restarted

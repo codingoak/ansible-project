@@ -1,0 +1,21 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 16: MOUNT OPTIONS (/dev/shm + /home)
+# ═══════════════════════════════════════════════════
+
+- name: "[16] Mount /dev/shm with nodev,nosuid,noexec"
+  ansible.posix.mount:
+    path: /dev/shm
+    src: tmpfs
+    fstype: tmpfs
+    opts: "defaults,nodev,nosuid,noexec,size={{ shm_size }}"
+    state: mounted
+  tags: [mount]
+
+- name: "[16] Remount /home with nodev,nosuid if separate partition"
+  ansible.builtin.shell: |
+    if findmnt /home > /dev/null 2>&1; then
+      mount -o remount,nodev,nosuid /home
+    fi
+  changed_when: false
+  tags: [mount]

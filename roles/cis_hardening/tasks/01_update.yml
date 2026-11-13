@@ -1,0 +1,31 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 01: SYSTEM UPDATES
+# ═══════════════════════════════════════════════════
+
+- name: "[01] Update all packages to latest"  # noqa: package-latest (intentional full update)
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+  tags: [update]
+
+- name: "[01] Install dnf-automatic"
+  ansible.builtin.dnf:
+    name: dnf-automatic
+    state: present
+  tags: [update]
+
+- name: "[01] Enable automatic security updates"
+  ansible.builtin.systemd:
+    name: dnf-automatic-install.timer
+    enabled: true
+    state: started
+  tags: [update]
+
+- name: "[01] Disable weak dependencies in DNF"
+  ansible.builtin.lineinfile:
+    path: /etc/dnf/dnf.conf
+    regexp: '^install_weak_deps'
+    line: 'install_weak_deps=False'
+    insertafter: '^\[main\]'
+  tags: [update]

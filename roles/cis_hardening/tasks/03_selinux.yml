@@ -1,0 +1,25 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 03: SELINUX
+# ═══════════════════════════════════════════════════
+
+- name: "[03] Check SELinux status"
+  ansible.builtin.command: getenforce
+  register: selinux_status
+  changed_when: false
+  check_mode: false  # read-only, also needed in --check
+  tags: [selinux]
+
+- name: "[03] Set SELinux to enforcing (persistent)"
+  ansible.builtin.lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=enforcing'
+    backup: true
+  tags: [selinux]
+
+- name: "[03] Set SELinux to enforcing (runtime)"
+  ansible.builtin.command: setenforce 1
+  when: selinux_status.stdout != "Enforcing"
+  changed_when: true
+  tags: [selinux]

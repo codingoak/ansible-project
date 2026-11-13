@@ -1,0 +1,28 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 19: DISABLE UNNECESSARY SERVICES
+# ═══════════════════════════════════════════════════
+
+- name: "[19] Disable unnecessary services"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ services_to_disable }}"
+  failed_when: false
+  tags: [services]
+
+# cockpit.service is a static unit (socket-activated), so "enabled: false"
+# reports changed on every run. Masking both units is idempotent and stricter.
+- name: "[19] Gather service facts"
+  ansible.builtin.service_facts:
+  tags: [services]
+
+- name: "[19] Mask Cockpit (web console, potential attack surface)"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+    state: stopped
+  loop: [cockpit.socket, cockpit.service]
+  when: "'cockpit.service' in ansible_facts.services"
+  tags: [services]

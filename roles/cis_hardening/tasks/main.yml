@@ -1,0 +1,48 @@
+---
+# Each file covers one CIS section and carries its own tag (see README).
+- name: Import 01_update
+  ansible.builtin.import_tasks: 01_update.yml
+- name: Import 02_packages
+  ansible.builtin.import_tasks: 02_packages.yml
+- name: Import 03_selinux
+  ansible.builtin.import_tasks: 03_selinux.yml
+- name: Import 04_crypto
+  ansible.builtin.import_tasks: 04_crypto.yml
+- name: Import 05_banner
+  ansible.builtin.import_tasks: 05_banner.yml
+- name: Import 06_ssh
+  ansible.builtin.import_tasks: 06_ssh.yml
+- name: Import 07_sudo
+  ansible.builtin.import_tasks: 07_sudo.yml
+- name: Import 08_pam
+  ansible.builtin.import_tasks: 08_pam.yml
+- name: Import 09_password
+  ansible.builtin.import_tasks: 09_password.yml
+- name: Import 10_umask
+  ansible.builtin.import_tasks: 10_umask.yml
+- name: Import 11_root
+  ansible.builtin.import_tasks: 11_root.yml
+- name: Import 12_firewall
+  ansible.builtin.import_tasks: 12_firewall.yml
+- name: Import 13_kernelmodules
+  ansible.builtin.import_tasks: 13_kernelmodules.yml
+- name: Import 14_sysctl
+  ansible.builtin.import_tasks: 14_sysctl.yml
+- name: Import 15_coredump
+  ansible.builtin.import_tasks: 15_coredump.yml
+- name: Import 16_mount
+  ansible.builtin.import_tasks: 16_mount.yml
+- name: Import 17_journald
+  ansible.builtin.import_tasks: 17_journald.yml
+- name: Import 18_cron
+  ansible.builtin.import_tasks: 18_cron.yml
+- name: Import 19_services
+  ansible.builtin.import_tasks: 19_services.yml
+- name: Import 20_aide
+  ansible.builtin.import_tasks: 20_aide.yml
+- name: Import 21_audit
+  ansible.builtin.import_tasks: 21_audit.yml
+- name: Import 22_grub
+  ansible.builtin.import_tasks: 22_grub.yml
+- name: Import 23_fileperms
+  ansible.builtin.import_tasks: 23_fileperms.yml

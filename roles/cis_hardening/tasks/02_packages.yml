@@ -1,0 +1,10 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 02: REMOVE INSECURE PACKAGES
+# ═══════════════════════════════════════════════════
+
+- name: "[02] Remove insecure packages"
+  ansible.builtin.dnf:
+    name: "{{ packages_to_remove }}"
+    state: absent
+  tags: [packages]

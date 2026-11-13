@@ -1,0 +1,30 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 15: DISABLE CORE DUMPS
+# ═══════════════════════════════════════════════════
+
+- name: "[15] Disable core dumps via limits.conf"
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    regexp: '^\*.*core'
+    line: '*                hard    core            0'
+  tags: [coredump]
+
+- name: "[15] Ensure coredump.conf.d directory exists"
+  ansible.builtin.file:
+    path: /etc/systemd/coredump.conf.d
+    state: directory
+    mode: '0755'
+  tags: [coredump]
+
+- name: "[15] Disable core dumps via systemd-coredump"
+  ansible.builtin.copy:
+    dest: /etc/systemd/coredump.conf.d/disable.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Coredump]
+      Storage=none
+      ProcessSizeMax=0
+  tags: [coredump]

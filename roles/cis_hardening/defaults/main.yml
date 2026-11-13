@@ -1,0 +1,99 @@
+---
+# ╔═══════════════════════════════════════════════════╗
+# ║  USER CONFIGURATION – Adjust these to your setup  ║
+# ╚═══════════════════════════════════════════════════╝
+
+# IP of the control node (only host allowed to SSH in)
+control_node_ip: "192.168.x.x"
+
+# Kernel IP forwarding (enable only if this host routes traffic, e.g. K8s)
+kernel_ip_forward: "0"
+kernel_ip_forward_v6: "0"
+
+# ╔═══════════════════════════════════════════════════╗
+# ║  CIS DEFAULTS – Usually no changes needed         ║
+# ╚═══════════════════════════════════════════════════╝
+
+# ── SSH ────────────────────────────────────────────
+ssh_port: 22
+ssh_idle_timeout: 300             # ClientAliveInterval (seconds)
+ssh_alive_count_max: 3
+ssh_max_auth_tries: 3
+ssh_max_sessions: 10
+ssh_max_startups: "10:30:60"
+ssh_login_grace_time: 60
+
+# ── Password policies ─────────────────────────────
+password_min_length: 14
+password_max_days: 365
+password_min_days: 1
+password_warn_days: 7
+password_inactive_days: 30
+password_remember: 24             # Reject last N passwords
+faillock_attempts: 5              # Lock after N failed attempts
+faillock_unlock_time: 900         # Unlock after N seconds
+
+# ── Session ───────────────────────────────────────
+session_timeout: 900              # TMOUT in seconds
+default_umask: "027"
+
+# ── Audit ─────────────────────────────────────────
+audit_buffer_size: 8192
+audit_backlog_limit: 8192
+
+# ── AIDE schedule (daily integrity check) ─────────
+aide_cron_minute: "5"
+aide_cron_hour: "4"
+
+# ── Shared memory ─────────────────────────────────
+shm_size: "512m"
+
+# ── Packages to remove ────────────────────────────
+packages_to_remove:
+  - telnet
+  - rsh
+  - rsh-server
+  - ypbind
+  - ypserv
+  - tftp
+  - tftp-server
+  - vsftpd
+  - httpd
+  - dovecot
+  - squid
+  - net-snmp
+  - samba
+
+# ── Services to disable ───────────────────────────
+# (Cockpit is masked separately, see tasks/19_services.yml)
+services_to_disable:
+  - bluetooth
+  - avahi-daemon
+  - cups
+
+# ── Kernel modules to blacklist ───────────────────
+kernel_module_blacklist:
+  # Filesystems
+  - cramfs
+  - freevxfs
+  - hfs
+  - hfsplus
+  - jffs2
+  - overlayfs
+  - squashfs
+  - udf
+  # USB storage
+  - usb-storage
+  # Network protocols
+  - atm
+  - can
+  - dccp
+  - firewire-core
+  - rds
+  - sctp
+  - tipc
+
+# ── Login banner ──────────────────────────────────
+login_banner: |
+  Authorized access only. Unauthorized access is prohibited.
+  All activity is logged and monitored.

@@ -1,0 +1,57 @@
+---
+# ═══════════════════════════════════════════════════
+#  BLOCK 18: CRON / AT HARDENING
+# ═══════════════════════════════════════════════════
+
+- name: "[18] Create cron.allow (root only)"
+  ansible.builtin.copy:
+    dest: /etc/cron.allow
+    content: "root\n"
+    owner: root
+    group: root
+    mode: '0600'
+  tags: [cron]
+
+- name: "[18] Create at.allow (root only)"
+  ansible.builtin.copy:
+    dest: /etc/at.allow
+    content: "root\n"
+    owner: root
+    group: root
+    mode: '0600'
+  tags: [cron]
+
+- name: "[18] Remove cron.deny"
+  ansible.builtin.file:
+    path: /etc/cron.deny
+    state: absent
+  tags: [cron]
+
+- name: "[18] Remove at.deny"
+  ansible.builtin.file:
+    path: /etc/at.deny
+    state: absent
+  tags: [cron]
+
+- name: "[18] Set cron directories to mode 0700"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: '0700'
+    owner: root
+    group: root
+  loop:
+    - /etc/cron.d
+    - /etc/cron.daily
+    - /etc/cron.hourly
+    - /etc/cron.weekly
+    - /etc/cron.monthly
+  failed_when: false
+  tags: [cron]
+
+- name: "[18] Set crontab to mode 0600"
+  ansible.builtin.file:
+    path: /etc/crontab
+    mode: '0600'
+    owner: root
+    group: root
+  tags: [cron]
